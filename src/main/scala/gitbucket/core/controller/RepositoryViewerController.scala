@@ -15,7 +15,6 @@ import gitbucket.core.util.Directory._
 import gitbucket.core.model.{Account, WebHook}
 import gitbucket.core.service.RepositoryService.RepositoryInfo
 import gitbucket.core.service.WebHookService.{WebHookCreatePayload, WebHookPushPayload}
-import gitbucket.core.util.JGitUtil.CommitInfo
 import gitbucket.core.view
 import gitbucket.core.view.helpers
 import org.apache.commons.compress.archivers.{ArchiveEntry, ArchiveOutputStream}
@@ -267,26 +266,12 @@ trait RepositoryViewerControllerBase extends ControllerBase {
               branchName,
               repository,
               logs
-                .map {
-                  commit =>
-                    (
-                      CommitInfo(
-                        id = commit.id,
-                        shortMessage = commit.shortMessage,
-                        fullMessage = commit.fullMessage,
-                        parents = commit.parents,
-                        authorTime = commit.authorTime,
-                        authorName = commit.authorName,
-                        authorEmailAddress = commit.authorEmailAddress,
-                        commitTime = commit.commitTime,
-                        committerName = commit.committerName,
-                        committerEmailAddress = commit.committerEmailAddress,
-                        commitSign = commit.commitSign,
-                        verified = commit.commitSign.flatMap(GpgUtil.verifySign)
-                      ),
-                      JGitUtil.getTagsOnCommit(git, commit.id),
-                      getCommitStatusWithSummary(repository.owner, repository.name, commit.id)
-                    )
+                .map { commit =>
+                  (
+                    commit.copy(verified = commit.commitSign.flatMap(GpgUtil.verifySign)),
+                    JGitUtil.getTagsOnCommit(git, commit.id),
+                    getCommitStatusWithSummary(repository.owner, repository.name, commit.id)
+                  )
                 }
                 .splitWith {
                   case ((commit1, _, _), (commit2, _, _)) =>
@@ -356,11 +341,11 @@ trait RepositoryViewerControllerBase extends ControllerBase {
 
         val newFiles = files.map { file =>
           file.copy(name = if (form.path.length == 0) file.name else s"${form.path}/${file.name}")
-        }.toSeq
+        }
 
         if (form.newBranch) {
           val newBranchName = createNewBranchForPullRequest(repository, form.branch, loginAccount)
-          val objectId = _commit(newBranchName, files, newFiles, loginAccount)
+          val objectId = _commit(newBranchName, newFiles, loginAccount)
           val issueId =
             createIssueAndPullRequest(
               repository,
@@ -373,7 +358,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
             )
           redirect(s"/${repository.owner}/${repository.name}/pull/${issueId}")
         } else {
-          _commit(form.branch, files, newFiles, loginAccount)
+          _commit(form.branch, newFiles, loginAccount)
           if (form.path.length == 0) {
             redirect(s"/${repository.owner}/${repository.name}/tree/${form.branch}")
           } else {
@@ -384,15 +369,15 @@ trait RepositoryViewerControllerBase extends ControllerBase {
 
     def _commit(
       branchName: String,
-      files: Seq[CommitFile],
+      //files: Seq[CommitFile],
       newFiles: Seq[CommitFile],
       loginAccount: Account
     ): ObjectId = {
       commitFiles(
         repository = repository,
         branch = branchName,
-        path = form.path,
-        files = files.toIndexedSeq,
+        //path = form.path,
+        //files = files.toIndexedSeq,
         message = form.message.getOrElse("Add files via upload"),
         loginAccount = loginAccount,
         settings = context.settings
@@ -438,7 +423,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
                     repository = repository,
                     pathList = paths.take(paths.size - 1).toList,
                     fileName = Some(paths.last),
-                    content = JGitUtil.getContentInfo(git, path, objectId),
+                    content = JGitUtil.getContentInfo(git, path, objectId, repository.repository.options.safeMode),
                     protectedBranch = protectedBranch,
                     commit = revCommit.getName,
                     newLineMode = info.newLineMode,
@@ -463,7 +448,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
             repository = repository,
             pathList = paths.take(paths.size - 1).toList,
             fileName = paths.last,
-            content = JGitUtil.getContentInfo(git, path, objectId),
+            content = JGitUtil.getContentInfo(git, path, objectId, repository.repository.options.safeMode),
             commit = revCommit.getName
           )
         } getOrElse NotFound()
@@ -509,7 +494,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
         commit = form.commit,
         loginAccount = loginAccount,
         settings = context.settings
-      )
+      )._1
     }
   })
 
@@ -556,7 +541,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
         commit = form.commit,
         loginAccount = loginAccount,
         settings = context.settings
-      )
+      )._1
     }
   })
 
@@ -599,7 +584,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
         commit = form.commit,
         loginAccount = loginAccount,
         settings = context.settings
-      )
+      )._1
     }
   })
 
@@ -708,7 +693,7 @@ trait RepositoryViewerControllerBase extends ControllerBase {
                 branch = id,
                 repository = repository,
                 pathList = path.split("/").toList,
-                content = JGitUtil.getContentInfo(git, path, objectId),
+                content = JGitUtil.getContentInfo(git, path, objectId, repository.repository.options.safeMode),
                 latestCommit = new JGitUtil.CommitInfo(JGitUtil.getLastModifiedCommit(git, revCommit, path)),
                 hasWritePermission = hasDeveloperRole(repository.owner, repository.name, context.loginAccount),
                 isBlame = request.paths(2) == "blame",
@@ -1238,34 +1223,37 @@ trait RepositoryViewerControllerBase extends ControllerBase {
           }
           if (treeWalk != null) {
             while (treeWalk.next()) {
-              val entryPath =
-                if (path.isEmpty) baseName + "/" + treeWalk.getPathString
-                else path.split("/").last + treeWalk.getPathString.substring(path.length)
-              val mode = treeWalk.getFileMode.getBits
-              JGitUtil.openFile(git, repository, commit.getTree, treeWalk.getPathString) { in =>
-                val tempFile = File.createTempFile("gitbucket", ".archive")
-                val size = Using.resource(new FileOutputStream(tempFile)) { out =>
-                  IOUtils.copy(
-                    EolStreamTypeUtil.wrapInputStream(
-                      in,
-                      EolStreamTypeUtil
-                        .detectStreamType(
-                          OperationType.CHECKOUT_OP,
-                          git.getRepository.getConfig.get(WorkingTreeOptions.KEY),
-                          treeWalk.getAttributes
-                        )
-                    ),
-                    out
-                  )
-                }
+              if (treeWalk.getFileMode != FileMode.GITLINK) {
+                val entryPath =
+                  if (path.isEmpty) baseName + "/" + treeWalk.getPathString
+                  else path.split("/").last + treeWalk.getPathString.substring(path.length)
+                val mode = treeWalk.getFileMode.getBits
 
-                val entry: ArchiveEntry = entryCreator(entryPath, size, date, mode)
-                archive.putArchiveEntry(entry)
-                Using.resource(new FileInputStream(tempFile)) { in =>
-                  IOUtils.copy(in, archive)
+                JGitUtil.openFile(git, repository, commit.getTree, treeWalk.getPathString) { in =>
+                  val tempFile = File.createTempFile("gitbucket", ".archive")
+                  val size = Using.resource(new FileOutputStream(tempFile)) { out =>
+                    IOUtils.copy(
+                      EolStreamTypeUtil.wrapInputStream(
+                        in,
+                        EolStreamTypeUtil
+                          .detectStreamType(
+                            OperationType.CHECKOUT_OP,
+                            git.getRepository.getConfig.get(WorkingTreeOptions.KEY),
+                            treeWalk.getAttributes
+                          )
+                      ),
+                      out
+                    )
+                  }
+
+                  val entry: ArchiveEntry = entryCreator(entryPath, size, date, mode)
+                  archive.putArchiveEntry(entry)
+                  Using.resource(new FileInputStream(tempFile)) { in =>
+                    IOUtils.copy(in, archive)
+                  }
+                  archive.closeArchiveEntry()
+                  tempFile.delete()
                 }
-                archive.closeArchiveEntry()
-                tempFile.delete()
               }
             }
           }
