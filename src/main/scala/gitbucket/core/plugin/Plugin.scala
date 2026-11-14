@@ -1,14 +1,15 @@
 package gitbucket.core.plugin
 
 import javax.servlet.ServletContext
-
 import gitbucket.core.controller.{Context, ControllerBase}
 import gitbucket.core.model.{Account, Issue}
 import gitbucket.core.service.RepositoryService.RepositoryInfo
 import gitbucket.core.service.SystemSettingsService.SystemSettings
 import io.github.gitbucket.solidbase.model.Version
+import org.apache.sshd.server.channel.ChannelSession
 import org.apache.sshd.server.command.Command
 import play.twirl.api.Html
+
 import scala.util.Using
 
 /**
@@ -323,7 +324,7 @@ abstract class Plugin {
   /**
    * Override to add ssh command providers.
    */
-  val sshCommandProviders: Seq[PartialFunction[String, Command]] = Nil
+  val sshCommandProviders: Seq[PartialFunction[String, ChannelSession => Command]] = Nil
 
   /**
    * Override to add ssh command providers.
@@ -332,32 +333,27 @@ abstract class Plugin {
     registry: PluginRegistry,
     context: ServletContext,
     settings: SystemSettings
-  ): Seq[PartialFunction[String, Command]] = Nil
+  ): Seq[PartialFunction[String, ChannelSession => Command]] = Nil
 
   /**
    * This method is invoked in initialization of plugin system.
    * Register plugin functionality to PluginRegistry.
    */
   def initialize(registry: PluginRegistry, context: ServletContext, settings: SystemSettings): Unit = {
-    (images ++ images(registry, context, settings)).foreach {
-      case (id, in) =>
-        registry.addImage(id, in)
+    (images ++ images(registry, context, settings)).foreach { case (id, in) =>
+      registry.addImage(id, in)
     }
-    (controllers ++ controllers(registry, context, settings)).foreach {
-      case (path, controller) =>
-        registry.addController(path, controller)
+    (controllers ++ controllers(registry, context, settings)).foreach { case (path, controller) =>
+      registry.addController(path, controller)
     }
-    (anonymousAccessiblePaths ++ anonymousAccessiblePaths(registry, context, settings)).foreach {
-      case (path) =>
-        registry.addAnonymousAccessiblePath(path)
+    (anonymousAccessiblePaths ++ anonymousAccessiblePaths(registry, context, settings)).foreach { case (path) =>
+      registry.addAnonymousAccessiblePath(path)
     }
-    (javaScripts ++ javaScripts(registry, context, settings)).foreach {
-      case (path, script) =>
-        registry.addJavaScript(path, script)
+    (javaScripts ++ javaScripts(registry, context, settings)).foreach { case (path, script) =>
+      registry.addJavaScript(path, script)
     }
-    (renderers ++ renderers(registry, context, settings)).foreach {
-      case (extension, renderer) =>
-        registry.addRenderer(extension, renderer)
+    (renderers ++ renderers(registry, context, settings)).foreach { case (extension, renderer) =>
+      registry.addRenderer(extension, renderer)
     }
     (repositoryRoutings ++ repositoryRoutings(registry, context, settings)).foreach { routing =>
       registry.addRepositoryRouting(routing)

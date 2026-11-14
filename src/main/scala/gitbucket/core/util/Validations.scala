@@ -28,6 +28,9 @@ trait Validations {
         Some(s"${name} contains invalid character.")
       } else if (value.startsWith("_") || value.startsWith("-")) {
         Some(s"${name} starts with invalid character.")
+      } else if (value.toLowerCase.endsWith(".git") || value.toLowerCase.endsWith(".wiki")) {
+        // Would clash with the directories of another repository or its wiki
+        Some(s"${name} must not end with .git or .wiki.")
       } else {
         None
       }
@@ -42,7 +45,7 @@ trait Validations {
    * ValueType for the java.util.Date property.
    */
   def date(constraints: Constraint*): SingleValueType[java.util.Date] =
-    new SingleValueType[java.util.Date]((pattern("\\d{4}-\\d{2}-\\d{2}") +: constraints): _*) {
+    new SingleValueType[java.util.Date]((pattern("\\d{4}-\\d{2}-\\d{2}") +: constraints)*) {
       def convert(value: String, messages: Messages): java.util.Date =
         new java.text.SimpleDateFormat("yyyy-MM-dd").parse(value)
     }

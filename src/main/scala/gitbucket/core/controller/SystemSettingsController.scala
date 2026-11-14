@@ -1,20 +1,19 @@
 package gitbucket.core.controller
 
 import java.io.FileInputStream
-
 import gitbucket.core.admin.html
 import gitbucket.core.plugin.PluginRegistry
-import gitbucket.core.service.SystemSettingsService._
+import gitbucket.core.service.SystemSettingsService.*
 import gitbucket.core.service.{AccountService, RepositoryService}
 import gitbucket.core.ssh.SshServer
-import gitbucket.core.util.Implicits._
-import gitbucket.core.util.StringUtil._
+import gitbucket.core.util.Implicits.*
+import gitbucket.core.util.StringUtil.*
 import gitbucket.core.util.{AdminAuthenticator, Mailer}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.mail.EmailException
 import org.json4s.jackson.Serialization
-import org.scalatra._
-import org.scalatra.forms._
+import org.scalatra.*
+import org.scalatra.forms.*
 import org.scalatra.i18n.Messages
 
 import scala.collection.mutable.ListBuffer
@@ -30,28 +29,44 @@ case class Table(name: String, columns: Seq[Column])
 case class Column(name: String, primaryKey: Boolean)
 
 trait SystemSettingsControllerBase extends AccountManagementControllerBase {
-  self: AccountService with RepositoryService with AdminAuthenticator =>
+  self: AccountService & RepositoryService & AdminAuthenticator =>
 
   private val form = mapping(
     "baseUrl" -> trim(label("Base URL", optional(text()))),
     "information" -> trim(label("Information", optional(text()))),
-    "allowAccountRegistration" -> trim(label("Account registration", boolean())),
-    "allowAnonymousAccess" -> trim(label("Anonymous access", boolean())),
-    "isCreateRepoOptionPublic" -> trim(label("Default visibility of new repository", boolean())),
-    "repositoryOperation" -> mapping(
-      "create" -> trim(label("Allow all users to create repository", boolean())),
-      "delete" -> trim(label("Allow all users to delete repository", boolean())),
-      "rename" -> trim(label("Allow all users to rename repository", boolean())),
-      "transfer" -> trim(label("Allow all users to transfer repository", boolean())),
-      "fork" -> trim(label("Allow all users to fork repository", boolean()))
-    )(RepositoryOperation.apply),
-    "gravatar" -> trim(label("Gravatar", boolean())),
-    "notification" -> trim(label("Notification", boolean())),
-    "limitVisibleRepositories" -> trim(label("limitVisibleRepositories", boolean())),
+    "basicBehavior" -> mapping(
+      "allowAccountRegistration" -> trim(label("Account registration", boolean())),
+      "allowResetPassword" -> trim(label("Reset password", boolean())),
+      "resetPasswordTokenExpiration" -> trim(label("Reset password token expiration", number())),
+      "allowAnonymousAccess" -> trim(label("Anonymous access", boolean())),
+      "isCreateRepoOptionPublic" -> trim(label("Default visibility of new repository", boolean())),
+      "allowCreateRepositoryByClone" -> trim(label("Allow creating repositories by cloning", boolean())),
+      "repositoryOperation" -> mapping(
+        "create" -> trim(label("Allow all users to create repository", boolean())),
+        "delete" -> trim(label("Allow all users to delete repository", boolean())),
+        "rename" -> trim(label("Allow all users to rename repository", boolean())),
+        "transfer" -> trim(label("Allow all users to transfer repository", boolean())),
+        "fork" -> trim(label("Allow all users to fork repository", boolean()))
+      )(RepositoryOperation.apply),
+      "gravatar" -> trim(label("Gravatar", boolean())),
+      "notification" -> trim(label("Notification", boolean())),
+      "limitVisibleRepositories" -> trim(label("limitVisibleRepositories", boolean())),
+      "compareNoCheckByDefault" -> trim(label("Default compare mode", boolean())),
+    )(BasicBehavior.apply),
     "ssh" -> mapping(
       "enabled" -> trim(label("SSH access", boolean())),
-      "host" -> trim(label("SSH host", optional(text()))),
-      "port" -> trim(label("SSH port", optional(number())))
+      "bindAddress" -> mapping(
+        "host" -> trim(label("Bind SSH host", optional(text()))),
+        "port" -> trim(label("Bind SSH port", optional(number()))),
+      )((hostOption, portOption) =>
+        hostOption.map(h => SshAddress(h, portOption.getOrElse(DefaultSshPort), GenericSshUser))
+      ),
+      "publicAddress" -> mapping(
+        "host" -> trim(label("Public SSH host", optional(text()))),
+        "port" -> trim(label("Public SSH port", optional(number()))),
+      )((hostOption, portOption) =>
+        hostOption.map(h => SshAddress(h, portOption.getOrElse(PublicSshPort), GenericSshUser))
+      ),
     )(Ssh.apply),
     "useSMTP" -> trim(label("SMTP", boolean())),
     "smtp" -> optionalIfNotChecked(
@@ -109,15 +124,19 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
       "largeTimeout" -> trim(label("Timeout for large file", long(required)))
     )(Upload.apply),
     "repositoryViewer" -> mapping(
-      "maxFiles" -> trim(label("Max files", number(required)))
-    )(RepositoryViewerSettings.apply)
+      "maxFiles" -> trim(label("Max files", number(required))),
+      "maxDiffFiles" -> trim(label("Max diff files", number(required))),
+      "maxDiffLines" -> trim(label("Max diff lines", number(required)))
+    )(RepositoryViewerSettings.apply),
+    "defaultBranch" -> trim(label("Default branch", text(required))),
+    "showFullName" -> trim(label("Show full name", boolean()))
   )(SystemSettings.apply).verifying { settings =>
     Vector(
       if (settings.ssh.enabled && settings.baseUrl.isEmpty) {
         Some("baseUrl" -> "Base URL is required if SSH access is enabled.")
       } else None,
-      if (settings.ssh.enabled && settings.ssh.sshHost.isEmpty) {
-        Some("sshHost" -> "SSH host is required if SSH access is enabled.")
+      if (settings.ssh.enabled && settings.ssh.bindAddress.isEmpty) {
+        Some("ssh.bindAddress.host" -> "SSH bind host is required if SSH access is enabled.")
       } else None
     ).flatten
   }
@@ -136,11 +155,11 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     "testAddress" -> trim(label("", text(required)))
   )(SendMailForm.apply)
 
-  case class SendMailForm(smtp: Smtp, testAddress: String)
+  private case class SendMailForm(smtp: Smtp, testAddress: String)
 
-  case class DataExportForm(tableNames: List[String])
+//  case class DataExportForm(tableNames: List[String])
 
-  case class NewUserForm(
+  private case class NewUserForm(
     userName: String,
     password: String,
     fullName: String,
@@ -152,7 +171,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     fileId: Option[String]
   )
 
-  case class EditUserForm(
+  private case class EditUserForm(
     userName: String,
     password: Option[String],
     fullName: String,
@@ -166,7 +185,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     isRemoved: Boolean
   )
 
-  case class NewGroupForm(
+  private case class NewGroupForm(
     groupName: String,
     description: Option[String],
     url: Option[String],
@@ -174,7 +193,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     members: String
   )
 
-  case class EditGroupForm(
+  private case class EditGroupForm(
     groupName: String,
     description: Option[String],
     url: Option[String],
@@ -184,9 +203,9 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     isRemoved: Boolean
   )
 
-  val newUserForm = mapping(
+  private val newUserForm = mapping(
     "userName" -> trim(label("Username", text(required, maxlength(100), identifier, uniqueUserName, reservedNames))),
-    "password" -> trim(label("Password", text(required, maxlength(20)))),
+    "password" -> trim(label("Password", text(required, maxlength(40)))),
     "fullName" -> trim(label("Full Name", text(required, maxlength(100)))),
     "mailAddress" -> trim(label("Mail Address", text(required, maxlength(100), uniqueMailAddress()))),
     "extraMailAddresses" -> list(
@@ -198,9 +217,9 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     "fileId" -> trim(label("File ID", optional(text())))
   )(NewUserForm.apply)
 
-  val editUserForm = mapping(
+  private val editUserForm = mapping(
     "userName" -> trim(label("Username", text(required, maxlength(100), identifier))),
-    "password" -> trim(label("Password", optional(text(maxlength(20))))),
+    "password" -> trim(label("Password", optional(text(maxlength(40))))),
     "fullName" -> trim(label("Full Name", text(required, maxlength(100)))),
     "mailAddress" -> trim(label("Mail Address", text(required, maxlength(100), uniqueMailAddress("userName")))),
     "extraMailAddresses" -> list(
@@ -214,7 +233,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     "removed" -> trim(label("Disable", boolean(disableByNotYourself("userName"))))
   )(EditUserForm.apply)
 
-  val newGroupForm = mapping(
+  private val newGroupForm = mapping(
     "groupName" -> trim(label("Group name", text(required, maxlength(100), identifier, uniqueUserName, reservedNames))),
     "description" -> trim(label("Group description", optional(text()))),
     "url" -> trim(label("URL", optional(text(maxlength(200))))),
@@ -222,7 +241,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     "members" -> trim(label("Members", text(required, members)))
   )(NewGroupForm.apply)
 
-  val editGroupForm = mapping(
+  private val editGroupForm = mapping(
     "groupName" -> trim(label("Group name", text(required, maxlength(100), identifier))),
     "description" -> trim(label("Group description", optional(text()))),
     "url" -> trim(label("URL", optional(text(maxlength(200))))),
@@ -236,28 +255,27 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     val conn = request2Session(request).conn
     val meta = conn.getMetaData
     val tables = ListBuffer[Table]()
-    Using.resource(meta.getTables(null, "%", "%", Array("TABLE", "VIEW"))) {
-      rs =>
-        while (rs.next()) {
-          val tableName = rs.getString("TABLE_NAME")
+    Using.resource(meta.getTables(null, "%", "%", Array("TABLE", "VIEW"))) { rs =>
+      while (rs.next()) {
+        val tableName = rs.getString("TABLE_NAME")
 
-          val pkColumns = ListBuffer[String]()
-          Using.resource(meta.getPrimaryKeys(null, null, tableName)) { rs =>
-            while (rs.next()) {
-              pkColumns += rs.getString("COLUMN_NAME").toUpperCase
-            }
+        val pkColumns = ListBuffer[String]()
+        Using.resource(meta.getPrimaryKeys(null, null, tableName)) { rs =>
+          while (rs.next()) {
+            pkColumns += rs.getString("COLUMN_NAME").toUpperCase
           }
-
-          val columns = ListBuffer[Column]()
-          Using.resource(meta.getColumns(null, "%", tableName, "%")) { rs =>
-            while (rs.next()) {
-              val columnName = rs.getString("COLUMN_NAME").toUpperCase
-              columns += Column(columnName, pkColumns.contains(columnName))
-            }
-          }
-
-          tables += Table(tableName.toUpperCase, columns.toSeq)
         }
+
+        val columns = ListBuffer[Column]()
+        Using.resource(meta.getColumns(null, "%", tableName, "%")) { rs =>
+          while (rs.next()) {
+            val columnName = rs.getString("COLUMN_NAME").toUpperCase
+            columns += Column(columnName, pkColumns.contains(columnName))
+          }
+        }
+
+        tables += Table(tableName.toUpperCase, columns.toSeq)
+      }
     }
     html.dbviewer(tables.toSeq)
   })
@@ -270,28 +288,26 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
         if (trimmedQuery.nonEmpty) {
           try {
             val conn = request2Session(request).conn
-            Using.resource(conn.prepareStatement(query)) {
-              stmt =>
-                if (trimmedQuery.toUpperCase.startsWith("SELECT")) {
-                  Using.resource(stmt.executeQuery()) {
-                    rs =>
-                      val meta = rs.getMetaData
-                      val columns = for (i <- 1 to meta.getColumnCount) yield {
-                        meta.getColumnName(i)
-                      }
-                      val result = ListBuffer[Map[String, String]]()
-                      while (rs.next()) {
-                        val row = columns.map { columnName =>
-                          columnName -> Option(rs.getObject(columnName)).map(_.toString).getOrElse("<NULL>")
-                        }.toMap
-                        result += row
-                      }
-                      Ok(Serialization.write(Map("type" -> "query", "columns" -> columns, "rows" -> result)))
+            Using.resource(conn.prepareStatement(query)) { stmt =>
+              if (trimmedQuery.toUpperCase.startsWith("SELECT")) {
+                Using.resource(stmt.executeQuery()) { rs =>
+                  val meta = rs.getMetaData
+                  val columns = for (i <- 1 to meta.getColumnCount) yield {
+                    meta.getColumnName(i)
                   }
-                } else {
-                  val rows = stmt.executeUpdate()
-                  Ok(Serialization.write(Map("type" -> "update", "rows" -> rows)))
+                  val result = ListBuffer[Map[String, String]]()
+                  while (rs.next()) {
+                    val row = columns.map { columnName =>
+                      columnName -> Option(rs.getObject(columnName)).map(_.toString).getOrElse("<NULL>")
+                    }.toMap
+                    result += row
+                  }
+                  Ok(Serialization.write(Map("type" -> "query", "columns" -> columns, "rows" -> result)))
                 }
+              } else {
+                val rows = stmt.executeUpdate()
+                Ok(Serialization.write(Map("type" -> "update", "rows" -> rows)))
+              }
             }
           } catch {
             case e: Exception =>
@@ -305,24 +321,32 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     html.settings(flash.get("info"))
   })
 
-  post("/admin/system", form)(adminOnly { form =>
+  post("/admin/system", form)(adminOnlyWithForm { form =>
     saveSystemSettings(form)
 
-    if (form.sshAddress != context.settings.sshAddress) {
+    if (
+      form.ssh.bindAddress != context.settings.sshBindAddress || form.ssh.publicAddress != context.settings.sshPublicAddress
+    ) {
       SshServer.stop()
       for {
-        sshAddress <- form.sshAddress
+        bindAddress <- form.ssh.bindAddress
+        publicAddress <- form.ssh.publicAddress.orElse(form.ssh.bindAddress)
         baseUrl <- form.baseUrl
-      } SshServer.start(sshAddress, baseUrl)
+      } SshServer.start(bindAddress, publicAddress, baseUrl)
     }
 
     flash.update("info", "System settings has been updated.")
     redirect("/admin/system")
   })
 
-  post("/admin/system/sendmail", sendMailForm)(adminOnly { form =>
+  post("/admin/system/sendmail", sendMailForm)(adminOnlyWithForm { form =>
     try {
-      new Mailer(context.settings.copy(smtp = Some(form.smtp), notification = true)).send(
+      new Mailer(
+        context.settings.copy(
+          smtp = Some(form.smtp),
+          basicBehavior = context.settings.basicBehavior.copy(notification = true)
+        )
+      ).send(
         to = form.testAddress,
         subject = "Test message from GitBucket",
         textMsg = "This is a test message from GitBucket.",
@@ -342,30 +366,34 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     html.plugins(PluginRegistry().getPlugins(), flash.get("info"))
   })
 
-  post("/admin/plugins/_reload")(adminOnly {
-    PluginRegistry.reload(request.getServletContext(), loadSystemSettings(), request2Session(request).conn)
-    flash.update("info", "All plugins were reloaded.")
-    redirect("/admin/plugins")
-  })
-
-  post("/admin/plugins/:pluginId/_uninstall")(adminOnly {
-    val pluginId = params("pluginId")
-
-    if (PluginRegistry().getPlugins().exists(_.pluginId == pluginId)) {
-      PluginRegistry
-        .uninstall(pluginId, request.getServletContext, loadSystemSettings(), request2Session(request).conn)
-      flash.update("info", s"${pluginId} was uninstalled.")
+  post("/admin/plugins/_reload")(
+    adminOnly {
+      PluginRegistry.reload(request.getServletContext, loadSystemSettings(), request2Session(request).conn)
+      flash.update("info", "All plugins were reloaded.")
+      redirect("/admin/plugins")
     }
+  )
 
-    redirect("/admin/plugins")
-  })
+  post("/admin/plugins/:pluginId/_uninstall")(
+    adminOnly {
+      val pluginId = params("pluginId")
+
+      if (PluginRegistry().getPlugins().exists(_.pluginId == pluginId)) {
+        PluginRegistry
+          .uninstall(pluginId, request.getServletContext, loadSystemSettings(), request2Session(request).conn)
+        flash.update("info", s"${pluginId} was uninstalled.")
+      }
+
+      redirect("/admin/plugins")
+    }
+  )
 
   get("/admin/users")(adminOnly {
-    val includeRemoved = params.get("includeRemoved").map(_.toBoolean).getOrElse(false)
-    val includeGroups = params.get("includeGroups").map(_.toBoolean).getOrElse(false)
+    val includeRemoved = params.get("includeRemoved").exists(_.toBoolean)
+    val includeGroups = params.get("includeGroups").exists(_.toBoolean)
     val users = getAllUsers(includeRemoved, includeGroups)
     val members = users.collect {
-      case account if (account.isGroupAccount) =>
+      case account if account.isGroupAccount =>
         account.userName -> getGroupMembers(account.userName).map(_.userName)
     }.toMap
 
@@ -376,7 +404,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     html.user(None, Nil)
   })
 
-  post("/admin/users/_newuser", newUserForm)(adminOnly { form =>
+  post("/admin/users/_newuser", newUserForm)(adminOnlyWithForm { form =>
     createAccount(
       form.userName,
       pbkdf2_sha256(form.password),
@@ -386,57 +414,58 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
       form.description,
       form.url
     )
-    updateImage(form.userName, form.fileId, false)
+    updateImage(form.userName, form.fileId, clearImage = false)
     updateAccountExtraMailAddresses(form.userName, form.extraMailAddresses.filter(_ != ""))
     redirect("/admin/users")
   })
 
-  get("/admin/users/:userName/_edituser")(adminOnly {
+  get("/admin/users/:userName/_edituser")(
+    adminOnly {
+      val userName = params("userName")
+      val extraMails = getAccountExtraMailAddresses(userName)
+      html.user(getAccountByUserName(userName, includeRemoved = true), extraMails, flash.get("error"))
+    }
+  )
+
+  post("/admin/users/:name/_edituser", editUserForm)(adminOnlyWithForm { form =>
     val userName = params("userName")
-    val extraMails = getAccountExtraMailAddresses(userName)
-    html.user(getAccountByUserName(userName, true), extraMails, flash.get("error"))
-  })
-
-  post("/admin/users/:name/_edituser", editUserForm)(adminOnly { form =>
-    val userName = params("userName")
-    getAccountByUserName(userName, true).map {
-      account =>
-        if (account.isAdmin && (form.isRemoved || !form.isAdmin) && isLastAdministrator(account)) {
-          flash.update("error", "Account can't be turned off because this is last one administrator.")
-          redirect(s"/admin/users/${userName}/_edituser")
-        } else {
-          if (form.isRemoved) {
-            // Remove repositories
-            //        getRepositoryNamesOfUser(userName).foreach { repositoryName =>
-            //          deleteRepository(userName, repositoryName)
-            //          FileUtils.deleteDirectory(getRepositoryDir(userName, repositoryName))
-            //          FileUtils.deleteDirectory(getWikiRepositoryDir(userName, repositoryName))
-            //          FileUtils.deleteDirectory(getTemporaryDir(userName, repositoryName))
-            //        }
-            // Remove from GROUP_MEMBER and COLLABORATOR
-            removeUserRelatedData(userName)
-          }
-
-          updateAccount(
-            account.copy(
-              password = form.password.map(pbkdf2_sha256).getOrElse(account.password),
-              fullName = form.fullName,
-              mailAddress = form.mailAddress,
-              isAdmin = form.isAdmin,
-              description = form.description,
-              url = form.url,
-              isRemoved = form.isRemoved
-            )
-          )
-
-          updateImage(userName, form.fileId, form.clearImage)
-          updateAccountExtraMailAddresses(userName, form.extraMailAddresses.filter(_ != ""))
-
-          // call hooks
-          if (form.isRemoved) PluginRegistry().getAccountHooks.foreach(_.deleted(userName))
-
-          redirect("/admin/users")
+    getAccountByUserName(userName, includeRemoved = true).map { account =>
+      if (account.isAdmin && (form.isRemoved || !form.isAdmin) && isLastAdministrator(account)) {
+        flash.update("error", "Account can't be downgraded or turned off because this one is the last administrator.")
+        redirect(s"/admin/users/${userName}/_edituser")
+      } else {
+        if (form.isRemoved) {
+          // Remove repositories
+          //        getRepositoryNamesOfUser(userName).foreach { repositoryName =>
+          //          deleteRepository(userName, repositoryName)
+          //          FileUtils.deleteDirectory(getRepositoryDir(userName, repositoryName))
+          //          FileUtils.deleteDirectory(getWikiRepositoryDir(userName, repositoryName))
+          //          FileUtils.deleteDirectory(getTemporaryDir(userName, repositoryName))
+          //        }
+          // Remove from GROUP_MEMBER and COLLABORATOR
+          removeUserRelatedData(userName)
         }
+
+        updateAccount(
+          account.copy(
+            password = form.password.map(pbkdf2_sha256).getOrElse(account.password),
+            fullName = form.fullName,
+            mailAddress = form.mailAddress,
+            isAdmin = form.isAdmin,
+            description = form.description,
+            url = form.url,
+            isRemoved = form.isRemoved
+          )
+        )
+
+        updateImage(userName, form.fileId, form.clearImage)
+        updateAccountExtraMailAddresses(userName, form.extraMailAddresses.filter(_ != ""))
+
+        // call hooks
+        if (form.isRemoved) PluginRegistry().getAccountHooks.foreach(_.deleted(userName))
+
+        redirect("/admin/users")
+      }
     } getOrElse NotFound()
   })
 
@@ -444,7 +473,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
     html.usergroup(None, Nil)
   })
 
-  post("/admin/users/_newgroup", newGroupForm)(adminOnly { form =>
+  post("/admin/users/_newgroup", newGroupForm)(adminOnlyWithForm { form =>
     createGroup(form.groupName, form.description, form.url)
     updateGroupMembers(
       form.groupName,
@@ -457,16 +486,18 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
         }
         .toList
     )
-    updateImage(form.groupName, form.fileId, false)
+    updateImage(form.groupName, form.fileId, clearImage = false)
     redirect("/admin/users")
   })
 
-  get("/admin/users/:groupName/_editgroup")(adminOnly {
-    val groupName = params("groupName")
-    html.usergroup(getAccountByUserName(groupName, true), getGroupMembers(groupName))
-  })
+  get("/admin/users/:groupName/_editgroup")(
+    adminOnly {
+      val groupName = params("groupName")
+      html.usergroup(getAccountByUserName(groupName, includeRemoved = true), getGroupMembers(groupName))
+    }
+  )
 
-  post("/admin/users/:groupName/_editgroup", editGroupForm)(adminOnly { form =>
+  post("/admin/users/:groupName/_editgroup", editGroupForm)(adminOnlyWithForm { form =>
     val groupName = params("groupName")
     val members = form.members
       .split(",")
@@ -477,13 +508,12 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
       }
       .toList
 
-    getAccountByUserName(groupName, true).map {
-      account =>
-        updateGroup(groupName, form.description, form.url, form.isRemoved)
+    getAccountByUserName(groupName, includeRemoved = true).map { account =>
+      updateGroup(groupName, form.description, form.url, form.isRemoved)
 
-        if (form.isRemoved) {
-          // Remove from GROUP_MEMBER
-          updateGroupMembers(form.groupName, Nil)
+      if (form.isRemoved) {
+        // Remove from GROUP_MEMBER
+        updateGroupMembers(form.groupName, Nil)
 //          // Remove repositories
 //          getRepositoryNamesOfUser(form.groupName).foreach { repositoryName =>
 //            deleteRepository(groupName, repositoryName)
@@ -491,9 +521,9 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
 //            FileUtils.deleteDirectory(getWikiRepositoryDir(groupName, repositoryName))
 //            FileUtils.deleteDirectory(getTemporaryDir(groupName, repositoryName))
 //          }
-        } else {
-          // Update GROUP_MEMBER
-          updateGroupMembers(form.groupName, members)
+      } else {
+        // Update GROUP_MEMBER
+        updateGroupMembers(form.groupName, members)
 //          // Update COLLABORATOR for group repositories
 //          getRepositoryNamesOfUser(form.groupName).foreach { repositoryName =>
 //            removeCollaborators(form.groupName, repositoryName)
@@ -501,27 +531,27 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
 //              addCollaborator(form.groupName, repositoryName, userName)
 //            }
 //          }
-        }
+      }
 
-        updateImage(form.groupName, form.fileId, form.clearImage)
-        redirect("/admin/users")
+      updateImage(form.groupName, form.fileId, form.clearImage)
+      redirect("/admin/users")
 
     } getOrElse NotFound()
   })
 
   get("/admin/data")(adminOnly {
-    import gitbucket.core.util.JDBCUtil._
+    import gitbucket.core.util.JDBCUtil.*
     val session = request2Session(request)
     html.data(session.conn.allTableNames())
   })
 
   post("/admin/export")(adminOnly {
-    import gitbucket.core.util.JDBCUtil._
+    import gitbucket.core.util.JDBCUtil.*
     val file = request2Session(request).conn.exportAsSQL(request.getParameterValues("tableNames").toSeq)
 
     contentType = "application/octet-stream"
     response.setHeader("Content-Disposition", "attachment; filename=" + file.getName)
-    response.setContentLength(file.length.toInt)
+    response.setContentLengthLong(file.length)
 
     Using.resource(new FileInputStream(file)) { in =>
       IOUtils.copy(in, response.outputStream)
@@ -531,7 +561,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
   })
 
   private def multiLineText(constraints: Constraint*): SingleValueType[Seq[String]] =
-    new SingleValueType[Seq[String]](constraints: _*) {
+    new SingleValueType[Seq[String]](constraints*) {
       def convert(value: String, messages: Messages): Seq[String] = {
         if (value == null) {
           Nil
@@ -544,9 +574,11 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
   private def members: Constraint =
     new Constraint() {
       override def validate(name: String, value: String, messages: Messages): Option[String] = {
-        if (value.split(",").exists {
-              _.split(":") match { case Array(userName, isManager) => isManager.toBoolean }
-            }) None
+        if (
+          value.split(",").exists {
+            _.split(":") match { case Array(userName, isManager) => isManager.toBoolean }
+          }
+        ) None
         else Some("Must select one manager at least.")
       }
     }
@@ -557,7 +589,7 @@ trait SystemSettingsControllerBase extends AccountManagementControllerBase {
         for {
           userName <- params.get(paramName)
           loginAccount <- context.loginAccount
-          if userName == loginAccount.userName && params.get("removed") == Some("true")
+          if userName == loginAccount.userName && params.get("removed").contains("true")
         } yield "You can't disable your account yourself"
       }
     }

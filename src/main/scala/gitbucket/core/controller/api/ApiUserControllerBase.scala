@@ -5,10 +5,10 @@ import gitbucket.core.service.{AccountService, RepositoryService}
 import gitbucket.core.util.{AdminAuthenticator, UsersAuthenticator}
 import gitbucket.core.util.Implicits._
 import gitbucket.core.util.StringUtil._
-import org.scalatra.NoContent
+import org.scalatra.{BadRequest, NoContent}
 
 trait ApiUserControllerBase extends ControllerBase {
-  self: RepositoryService with AccountService with AdminAuthenticator with UsersAuthenticator =>
+  self: RepositoryService & AccountService & AdminAuthenticator & UsersAuthenticator =>
 
   /**
    * i. Get a single user
@@ -31,6 +31,17 @@ trait ApiUserControllerBase extends ControllerBase {
     } getOrElse Unauthorized()
   }
 
+  /**
+   * ii-b. Get a user using their ID
+   * https://docs.github.com/en/rest/users/users#get-a-user-using-their-id
+   * This API also returns group information (as GitHub).
+   */
+  get("/api/v3/user/:id") {
+    params("id").toLongOption.flatMap(getAccountById(_)).map { account =>
+      JsonFormat(ApiUser(account))
+    } getOrElse NotFound()
+  }
+
   /*
    * iii. Update the authenticated user
    * https://developer.github.com/v3/users/#update-the-authenticated-user
@@ -45,7 +56,7 @@ trait ApiUserControllerBase extends ControllerBase {
       )
       updateAccount(updatedAccount)
       JsonFormat(ApiUser(updatedAccount))
-    })
+    }) getOrElse BadRequest()
   })
 
   /*
@@ -66,7 +77,7 @@ trait ApiUserControllerBase extends ControllerBase {
    * https://developer.github.com/enterprise/2.14/v3/enterprise-admin/users/#create-a-new-user
    */
   post("/api/v3/admin/users")(adminOnly {
-    for {
+    (for {
       data <- extractFromJsonBody[CreateAUser]
     } yield {
       val user = createAccount(
@@ -79,37 +90,41 @@ trait ApiUserControllerBase extends ControllerBase {
         data.url
       )
       JsonFormat(ApiUser(user))
-    }
+    }) getOrElse BadRequest()
   })
 
   /*
    * ghe: vii. Suspend a user
    * https://developer.github.com/enterprise/2.14/v3/enterprise-admin/users/#suspend-a-user
    */
-  put("/api/v3/users/:userName/suspended")(adminOnly {
-    val userName = params("userName")
-    getAccountByUserName(userName) match {
-      case Some(targetAccount) =>
-        removeUserRelatedData(userName)
-        updateAccount(targetAccount.copy(isRemoved = true))
-        NoContent()
-      case None =>
-        NotFound()
+  put("/api/v3/users/:userName/suspended")(
+    adminOnly {
+      val userName = params("userName")
+      getAccountByUserName(userName) match {
+        case Some(targetAccount) =>
+          removeUserRelatedData(userName)
+          updateAccount(targetAccount.copy(isRemoved = true))
+          NoContent()
+        case None =>
+          NotFound()
+      }
     }
-  })
+  )
 
   /*
    * ghe: vii. Unsuspend a user
    * https://developer.github.com/enterprise/2.14/v3/enterprise-admin/users/#unsuspend-a-user
    */
-  delete("/api/v3/users/:userName/suspended")(adminOnly {
-    val userName = params("userName")
-    getAccountByUserName(userName, true) match {
-      case Some(targetAccount) =>
-        updateAccount(targetAccount.copy(isRemoved = false))
-        NoContent()
-      case None =>
-        NotFound()
+  delete("/api/v3/users/:userName/suspended")(
+    adminOnly {
+      val userName = params("userName")
+      getAccountByUserName(userName, true) match {
+        case Some(targetAccount) =>
+          updateAccount(targetAccount.copy(isRemoved = false))
+          NoContent()
+        case None =>
+          NotFound()
+      }
     }
-  })
+  )
 }

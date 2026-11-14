@@ -1,4 +1,4 @@
-GitBucket [![Gitter chat](https://badges.gitter.im/gitbucket/gitbucket.svg)](https://gitter.im/gitbucket/gitbucket) [![build](https://github.com/gitbucket/gitbucket/workflows/build/badge.svg?branch=master)](https://github.com/gitbucket/gitbucket/actions?query=workflow%3Abuild+branch%3Amaster) [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.github.gitbucket/gitbucket_2.13/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.github.gitbucket/gitbucket_2.13) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/gitbucket/gitbucket/blob/master/LICENSE)
+GitBucket [![Gitter chat](https://badges.gitter.im/gitbucket/gitbucket.svg)](https://gitter.im/gitbucket/gitbucket) [![build](https://github.com/gitbucket/gitbucket/actions/workflows/build.yml/badge.svg)](https://github.com/gitbucket/gitbucket/actions/workflows/build.yml) [![gitbucket Scala version support](https://index.scala-lang.org/gitbucket/gitbucket/gitbucket/latest-by-scala-version.svg)](https://index.scala-lang.org/gitbucket/gitbucket/gitbucket) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/gitbucket/gitbucket/blob/master/LICENSE)
 =========
 
 GitBucket is a Git web platform powered by Scala offering:
@@ -9,8 +9,6 @@ GitBucket is a Git web platform powered by Scala offering:
 - API compatibility with GitHub
 
 ![GitBucket](https://gitbucket.github.io/img/screenshots/screenshot-repository_viewer.png)
-
-You can try an [online demo](https://gitbucket.herokuapp.com/) *(ID: root / Pass: root)* of GitBucket, and also get the latest information at [GitBucket News](https://gitbucket.github.io/gitbucket-news/).
 
 Features
 --------
@@ -26,12 +24,12 @@ The current version of GitBucket provides many features such as:
 
 Installation
 --------
-GitBucket requires **Java8**. You have to install it, if it is not already installed.
+GitBucket requires **Java 17**. You have to install it, if it is not already installed.
 
 1. Download the latest **gitbucket.war** from [the releases page](https://github.com/gitbucket/gitbucket/releases) and run it by `java -jar gitbucket.war`.
 2. Go to `http://[hostname]:8080/` and log in with ID: **root** / Pass: **root**.
 
-You can also deploy `gitbucket.war` to a servlet container which supports Servlet 3.0 (like Jetty, Tomcat, JBoss, etc)
+You can also deploy `gitbucket.war` to a servlet container which supports Servlet 3.0 (like Jetty, Tomcat, JBoss, etc). Note that GitBucket doesn't support Jakarta EE yet.
 
 For more information about installation on Mac or Windows Server (with IIS), or configuration of Apache or Nginx and also integration with other tools or services such as Jenkins or Slack, see [Wiki](https://github.com/gitbucket/gitbucket/wiki).
 
@@ -46,7 +44,7 @@ GitBucket has a plug-in system that allows extra functionality. Officially the f
 - [gitbucket-pages-plugin](https://github.com/gitbucket/gitbucket-pages-plugin)
 - [gitbucket-notifications-plugin](https://github.com/gitbucket/gitbucket-notifications-plugin)
 
-You can find more plugins made by the community at [GitBucket community plugins](https://gitbucket-plugins.github.io/).
+You can find more plugins made by the community at [GitBucket community plugins](https://github.com/gitbucket/gitbucket/wiki/Community-Plugins).
 
 Building and Development
 -----------
@@ -58,34 +56,37 @@ Support
 --------
 
 - If you have any questions about GitBucket, see [Wiki](https://github.com/gitbucket/gitbucket/wiki) and check issues whether there is a same question or request in the past.
-- If you can't find same question and report, send it to [gitter room](https://gitter.im/gitbucket/gitbucket) before raising an issue.
+- If you can't find same question and report, send it to our [Gitter chat room](https://gitter.im/gitbucket/gitbucket) before raising an issue.
 - The highest priority of GitBucket is the ease of installation and API compatibility with GitHub, so your feature request might be rejected if they go against those principles.
 
-What's New in 4.35.x
+What's New in 4.48.x
 -------------
-### 4.35.3 - 14 Jan 2021
-- Fix a bug that Wiki page cannot be deleted
-- Fix a deployment issue on Tomcat
+### 4.48.0 - 20 Sep 2026
+- Add numeric user/account id to GitHub compatibility api; add new API for managing users by numeric id
+- Authentication-related API changes. Some plugins might not work with this version
+- Fix a bug in the last admin user delete prevention; add Danger-zone tab to the user settings page
 
-### 4.35.2 - 30 Dec 2020
-- Upgrade gitbucket-notifications-plugin to 1.10.0
-- Upgrade oauth2-oidc-sdk to 8.29.1 to solve dependency issue
+**Note 1:** GitBuclet 4.47.0 and 4.48.0 contain large database migrations affecting core tables such as `REPOSITORY` and `ACCOUNT`. We strongly recommend backing up your database before upgrading.
 
-### 4.35.1 - 29 Dec 2020
+**Note 2:** You have to migrate h2 database file if you will upgrade GitBucket from 4.42 or before to 4.43 or later and you are using the default h2 database because h2 1.x and h2.x don't have compatibility: https://www.h2database.com/html/migration-to-v2.html
 
-- Fix database migration issue which happens if webhook is configured
-- Call push webhook when pull request is merged
-- Show commit status at commits tab of pull request
+It can't be done automatically using GitBucket's auto migration mechanism because it relies on database itself. So, users who use h2 will have to dump and recreate their database manually with the following steps:
+```bash
+# Export database using the current version of H2
+$ curl -O https://repo1.maven.org/maven2/com/h2database/h2/1.4.199/h2-1.4.199.jar
+$ java -cp h2-1.4.199.jar org.h2.tools.Script -url "jdbc:h2:~/.gitbucket/data" -user sa -password sa -script dump.sql
 
-### 4.35.0 - 25 Dec 2020
+# Recreate database using the new version of H2
+$ curl -O https://repo1.maven.org/maven2/com/h2database/h2/2.3.232/h2-2.3.232.jar
+$ java -cp h2-2.3.232.jar org.h2.tools.RunScript -url "jdbc:h2:~/.gitbucket/data" -user sa -password sa -script dump.sql
+```
 
-- Editor and source viewer color theme
-- Auto completion for issues and pull requests
-- Upload image from clipboard
-- Close multiple issues by commit comment
-- Create pull request from online editor
-- Milestone overview
-- Commit status at various places
-- WebAPI coverage improvements
+In addition, if `~/.gitbucket/database.conf` has the following configuration, remove `;MVCC=true` from `url`.
+```
+db {
+  url = "jdbc:h2:${DatabaseHome};MVCC=true" // => "jdbc:h2:${DatabaseHome}"
+  ...
+}
+```
 
-See the [change log](CHANGELOG.md) for all of the updates.
+See the [change log](CHANGELOG.md) for all the past updates.

@@ -4,7 +4,8 @@
   repository: gitbucket.core.service.RepositoryService.RepositoryInfo,
   isEditable: Boolean,
   sidebar: Option[gitbucket.core.service.WikiService.WikiPageInfo],
-  footer: Option[gitbucket.core.service.WikiService.WikiPageInfo])(implicit context: gitbucket.core.controller.Context)
+  footer: Option[gitbucket.core.service.WikiService.WikiPageInfo],
+  branch: String)(implicit context: gitbucket.core.controller.Context)
 @import gitbucket.core.view.helpers
 @import gitbucket.core.service.WikiService
 @gitbucket.core.html.main(s"${pageName} - ${repository.owner}/${repository.name}", Some(repository)){
@@ -59,7 +60,17 @@
           @if(isEditable){
             <a href="@helpers.url(repository)/wiki/_Sidebar/_edit" style="text-decoration: none;"><span class="octicon octicon-pencil pull-right"></span></a>
           }
-          @helpers.markdown(sidebarPage.content, repository, "master", true, false, false, false, pages)
+          @helpers.renderMarkup(
+            filePath = sidebarPage.name.split("/").toList,
+            fileContent = sidebarPage.content,
+            branch = branch,
+            repository = repository,
+            enableWikiLink = true,
+            enableRefsLink = false,
+            enableAnchor = false,
+            enableLineBreaks = false,
+            enableTaskList = false
+          )
         </div>
       }.getOrElse{
         @if(isEditable){
@@ -82,16 +93,16 @@
     </div>
     <div class="wiki-main">
       <div class="markdown-body">
-        @helpers.markdown(
-          markdown = page.content,
+        @helpers.renderMarkup(
+          filePath = page.name.split("/").toList,
+          fileContent = page.content,
+          branch = branch,
           repository = repository,
-          branch = "master",
           enableWikiLink = true,
           enableRefsLink = false,
+          enableAnchor = true,
           enableLineBreaks = false,
-          enableTaskList = false,
-          hasWritePermission = false,
-          pages = pages
+          enableTaskList = false
         )
       </div>
       @footer.map { footerPage =>
@@ -99,15 +110,16 @@
           @if(isEditable){
             <a href="@helpers.url(repository)/wiki/_Footer/_edit" style="text-decoration: none;"><span class="octicon octicon-pencil pull-right"></span></a>
           }
-          @helpers.markdown(
-            markdown         = footerPage.content,
-            repository       = repository,
-            branch           = "master",
-            enableWikiLink   = true,
-            enableRefsLink   = false,
+          @helpers.renderMarkup(
+            filePath = footerPage.name.split("/").toList,
+            fileContent = footerPage.content,
+            branch = branch,
+            repository = repository,
+            enableWikiLink = true,
+            enableRefsLink = false,
+            enableAnchor = false,
             enableLineBreaks = false,
-            enableAnchor     = false,
-            pages            = pages
+            enableTaskList = false
           )
         </div>
       }.getOrElse{

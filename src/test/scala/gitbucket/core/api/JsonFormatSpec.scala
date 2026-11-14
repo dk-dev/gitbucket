@@ -1,13 +1,21 @@
 package gitbucket.core.api
 
+import org.json4s.{Formats, JValue, jvalue2extractable}
 import org.json4s.jackson.JsonMethods
+import org.scalatest.Assertion
 import org.scalatest.funsuite.AnyFunSuite
 
 class JsonFormatSpec extends AnyFunSuite {
-  import ApiSpecModels._
-  implicit val format = JsonFormat.jsonFormats
+  import ApiSpecModels.*
+  implicit val format: Formats = JsonFormat.jsonFormats
 
   private def expected(json: String) = json.replaceAll("\n", "")
+  def normalizeJson(json: String): JValue = {
+    org.json4s.jackson.parseJson(json)
+  }
+  def assertEqualJson(actual: String, expected: String): Assertion = {
+    assert(normalizeJson(actual) == normalizeJson(expected))
+  }
 
   test("apiUser") {
     assert(JsonFormat(apiUser) == expected(jsonUser))
@@ -49,7 +57,9 @@ class JsonFormatSpec extends AnyFunSuite {
     assert(JsonFormat(apiBranchProtectionOutput) == expected(jsonBranchProtectionOutput))
   }
   test("deserialize apiBranchProtection") {
-    assert(JsonMethods.parse(jsonBranchProtectionInput).extract[ApiBranchProtection] == apiBranchProtectionInput)
+    assert(
+      JsonMethods.parse(jsonBranchProtectionInput).extract[ApiBranchProtectionResponse] == apiBranchProtectionInput
+    )
   }
   test("apiBranch") {
     assert(JsonFormat(apiBranch) == expected(jsonBranch))
@@ -76,8 +86,11 @@ class JsonFormatSpec extends AnyFunSuite {
   test("apiPusher") {
     assert(JsonFormat(apiPusher) == expected(jsonPusher))
   }
-  test("apiRef") {
-    assert(JsonFormat(apiRef) == expected(jsonRef))
+  test("apiRefHead") {
+    assertEqualJson(JsonFormat(apiRefHeadsMaster)(gitHubContext), jsonRefHeadsMain)
+  }
+  test("apiRefTag") {
+    assertEqualJson(JsonFormat(apiRefTag)(gitHubContext), jsonRefTag)
   }
   test("apiReleaseAsset") {
     assert(JsonFormat(apiReleaseAsset) == expected(jsonReleaseAsset))

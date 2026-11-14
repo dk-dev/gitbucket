@@ -8,13 +8,13 @@ import gitbucket.core.model.Profile.profile.blockingApi._
 import gitbucket.core.ssh.PublicKeyAuthenticator.AuthType
 import org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator
 import org.apache.sshd.server.session.ServerSession
-import org.apache.sshd.common.AttributeStore
+import org.apache.sshd.common.AttributeRepository
 import org.slf4j.LoggerFactory
 
 object PublicKeyAuthenticator {
 
   // put in the ServerSession here to be read by GitCommand later
-  private val authTypeSessionKey = new AttributeStore.AttributeKey[AuthType]
+  private val authTypeSessionKey = new AttributeRepository.AttributeKey[AuthType]
 
   def putAuthType(serverSession: ServerSession, authType: AuthType): Unit =
     serverSession.setAttribute(authTypeSessionKey, authType)
@@ -56,8 +56,8 @@ class PublicKeyAuthenticator(genericUser: String)
     }
   }
 
-  private def authenticateLoginUser(userName: String, key: PublicKey, session: ServerSession)(
-    implicit s: Session
+  private def authenticateLoginUser(userName: String, key: PublicKey, session: ServerSession)(implicit
+    s: Session
   ): Boolean = {
     val authenticated = getPublicKeys(userName).map(_.publicKey).flatMap(SshUtil.str2PublicKey).contains(key)
 

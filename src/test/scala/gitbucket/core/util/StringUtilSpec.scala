@@ -88,42 +88,92 @@ class StringUtilSpec extends AnyFunSpec {
     it("should convert GitBucket repository url") {
       assert(
         StringUtil
-          .getRepositoryViewerUrl("http://localhost:8080/git/root/gitbucket.git", baseUrl) == "http://localhost:8080/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "http://localhost:8080/git/root/gitbucket.git",
+            baseUrl
+          ) == "http://localhost:8080/root/gitbucket"
       )
       assert(
         StringUtil
-          .getRepositoryViewerUrl("http://root@localhost:8080/git/root/gitbucket.git", baseUrl) == "http://localhost:8080/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "http://root@localhost:8080/git/root/gitbucket.git",
+            baseUrl
+          ) == "http://localhost:8080/root/gitbucket"
       )
     }
     it("should convert GitHub repository url") {
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://github.com/root/gitbucket.git", baseUrl) == "https://github.com/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://github.com/root/gitbucket.git",
+            baseUrl
+          ) == "https://github.com/root/gitbucket"
       )
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://root@github.com/root/gitbucket.git", baseUrl) == "https://github.com/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://root@github.com/root/gitbucket.git",
+            baseUrl
+          ) == "https://github.com/root/gitbucket"
       )
     }
     it("should convert BitBucket repository url") {
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://bitbucket.org/root/gitbucket.git", baseUrl) == "https://bitbucket.org/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://bitbucket.org/root/gitbucket.git",
+            baseUrl
+          ) == "https://bitbucket.org/root/gitbucket"
       )
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://root@bitbucket.org/root/gitbucket.git", baseUrl) == "https://bitbucket.org/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://root@bitbucket.org/root/gitbucket.git",
+            baseUrl
+          ) == "https://bitbucket.org/root/gitbucket"
       )
     }
     it("should convert GitLab repository url") {
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://gitlab.com/root/gitbucket.git", baseUrl) == "https://gitlab.com/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://gitlab.com/root/gitbucket.git",
+            baseUrl
+          ) == "https://gitlab.com/root/gitbucket"
       )
       assert(
         StringUtil
-          .getRepositoryViewerUrl("https://root@gitlab.com/root/gitbucket.git", baseUrl) == "https://gitlab.com/root/gitbucket"
+          .getRepositoryViewerUrl(
+            "https://root@gitlab.com/root/gitbucket.git",
+            baseUrl
+          ) == "https://gitlab.com/root/gitbucket"
       )
+    }
+  }
+
+  describe("hasUtf8Bom") {
+    it("should return true for byte array starting with UTF-8 BOM") {
+      val withBom = Array[Byte](0xef.toByte, 0xbb.toByte, 0xbf.toByte, 'H'.toByte, 'i'.toByte)
+      assert(StringUtil.hasUtf8Bom(withBom) == true)
+    }
+    it("should return false for byte array without BOM") {
+      val withoutBom = Array[Byte]('H'.toByte, 'e'.toByte, 'l'.toByte, 'l'.toByte, 'o'.toByte)
+      assert(StringUtil.hasUtf8Bom(withoutBom) == false)
+    }
+    it("should return false for empty byte array") {
+      assert(StringUtil.hasUtf8Bom(Array.emptyByteArray) == false)
+    }
+    it("should return false for byte array with less than 3 bytes") {
+      assert(StringUtil.hasUtf8Bom(Array[Byte](0xef.toByte, 0xbb.toByte)) == false)
+    }
+  }
+
+  describe("Utf8Bom") {
+    it("should be the correct BOM byte sequence") {
+      assert(StringUtil.Utf8Bom.length == 3)
+      assert((StringUtil.Utf8Bom(0) & 0xff) == 0xef)
+      assert((StringUtil.Utf8Bom(1) & 0xff) == 0xbb)
+      assert((StringUtil.Utf8Bom(2) & 0xff) == 0xbf)
     }
   }
 }

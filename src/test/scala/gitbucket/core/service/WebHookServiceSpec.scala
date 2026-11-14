@@ -5,9 +5,19 @@ import org.scalatest.funsuite.AnyFunSuite
 import gitbucket.core.model.WebHookContentType
 
 class WebHookServiceSpec extends AnyFunSuite with ServiceSpecBase {
-  lazy val service = new WebHookPullRequestService with AccountService with ActivityService with RepositoryService
-  with MergeService with PullRequestService with IssuesService with CommitsService with LabelsService
-  with MilestonesService with PrioritiesService with WebHookPullRequestReviewCommentService with RequestCache
+  lazy val service = new WebHookPullRequestService
+    with AccountService
+    with ActivityService
+    with RepositoryService
+    with MergeService
+    with PullRequestService
+    with IssuesService
+    with CommitsService
+    with LabelsService
+    with MilestonesService
+    with PrioritiesService
+    with WebHookPullRequestReviewCommentService
+    with RequestCache
 
   test("WebHookPullRequestService.getPullRequestsByRequestForWebhook") {
     withTestDB { implicit session =>
@@ -139,4 +149,80 @@ class WebHookServiceSpec extends AnyFunSuite with ServiceSpecBase {
       )
     }
   }
+
+  test("repository webhook ID operations are scoped to the repository") {
+    withTestDB { implicit session =>
+      val ctype = WebHookContentType.FORM
+      generateNewUserWithDBRepository("user1", "repo1")
+      generateNewUserWithDBRepository("user2", "repo2")
+      service.addWebHook("user1", "repo1", "http://example.com/1", Set(WebHook.Push), ctype, Some("key1"))
+      service.addWebHook("user2", "repo2", "http://example.com/2", Set(WebHook.Issues), ctype, Some("key2"))
+
+      assert(service.getWebHookById("user1", "repo1", 2).isEmpty)
+      assert(
+        !service.updateWebHookByApi(
+          2,
+          "user1",
+          "repo1",
+          "http://example.com/updated",
+          Set(WebHook.PullRequest),
+          WebHookContentType.JSON,
+          Some("updated")
+        )
+      )
+      assert(!service.deleteWebHookById("user1", "repo1", 2))
+      assert(
+        service.getWebHookById("user2", "repo2", 2) == Some(
+          RepositoryWebHook("user2", "repo2", 2, "http://example.com/2", ctype, Some("key2")) -> Set(WebHook.Issues)
+        )
+      )
+    }
+  }
+
+  test("callWebHook keeps the response body, up to MaxResponseBodySize") {
+    import com.sun.net.httpserver.HttpServer
+    import gitbucket.core.api.JsonFormat
+    import java.net.InetSocketAddress
+    import org.apache.http.util.EntityUtils
+    import scala.concurrent.Await
+    import scala.concurrent.duration.*
+
+    val smallBody = """{"message": "ok"}"""
+    val largeBody = "x" * (WebHookService.MaxResponseBodySize + 1000)
+
+    val server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext(
+      "/",
+      exchange => {
+        exchange.getRequestBody.readAllBytes()
+        val body = (if (exchange.getRequestURI.getPath == "/large") largeBody else smallBody).getBytes("UTF-8")
+        exchange.sendResponseHeaders(200, body.length)
+        exchange.getResponseBody.write(body)
+        exchange.close()
+      }
+    )
+    server.start()
+    try {
+      implicit val context: JsonFormat.Context = JsonFormat.Context("http://gitbucket.example.com", None)
+      def callAndReadBody(path: String): String = {
+        val url = s"http://127.0.0.1:${server.getAddress.getPort}$path"
+        val webHook = RepositoryWebHook("user1", "repo1", 0, url, WebHookContentType.JSON, None)
+        val (_, _, _, resFuture) = service
+          .callWebHook(WebHook.Push, List(webHook), WebHookServiceSpec.TestPayload("test"), createSystemSettings())
+          .head
+        val res = Await.result(resFuture, 20.seconds)
+        assert(res.getStatusLine.getStatusCode == 200)
+        EntityUtils.toString(res.getEntity)
+      }
+
+      assert(callAndReadBody("/small") == smallBody)
+      assert(callAndReadBody("/large") == largeBody.take(WebHookService.MaxResponseBodySize))
+    } finally {
+      server.stop(0)
+    }
+  }
+}
+
+object WebHookServiceSpec {
+  case class TestPayload(message: String) extends WebHookService.WebHookPayload
 }

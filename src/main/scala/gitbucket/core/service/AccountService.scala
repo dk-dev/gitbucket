@@ -7,15 +7,20 @@ import gitbucket.core.model.Profile.profile.blockingApi._
 import gitbucket.core.model.Profile.dateColumnType
 import gitbucket.core.util.{LDAPUtil, StringUtil}
 import StringUtil._
+import com.nimbusds.jose.{JWSAlgorithm, JWSHeader}
+import com.nimbusds.jose.crypto.{MACSigner, MACVerifier}
+import com.nimbusds.jwt.{JWTClaimsSet, SignedJWT}
 import gitbucket.core.plugin.PluginRegistry
 import gitbucket.core.service.SystemSettingsService.SystemSettings
+
+import java.security.SecureRandom
 
 trait AccountService {
 
   private val logger = LoggerFactory.getLogger(classOf[AccountService])
 
-  def authenticate(settings: SystemSettings, userName: String, password: String)(
-    implicit s: Session
+  def authenticate(settings: SystemSettings, userName: String, password: String)(implicit
+    s: Session
   ): Option[Account] = {
     val account = if (password.isEmpty) {
       None
@@ -41,47 +46,47 @@ trait AccountService {
       case account if !account.isGroupAccount =>
         account.password match {
           case pbkdf2re(iter, salt, hash) if (pbkdf2_sha256(iter.toInt, salt, password) == hash) => Some(account)
-          case p if p == sha1(password) =>
+          case p if p == sha1(password)                                                          =>
             updateAccount(account.copy(password = pbkdf2_sha256(password)))
             Some(account)
           case _ => None
         }
       case account if (!account.isGroupAccount && account.password == sha1(password)) => Some(account)
-    } getOrElse None
+    }.flatten
   }
 
   /**
    * Authenticate by LDAP.
    */
-  private def ldapAuthentication(settings: SystemSettings, userName: String, password: String)(
-    implicit s: Session
+  private def ldapAuthentication(settings: SystemSettings, userName: String, password: String)(implicit
+    s: Session
   ): Option[Account] = {
     LDAPUtil.authenticate(settings.ldap.get, userName, password) match {
       case Right(ldapUserInfo) => {
         // Create or update account by LDAP information
         getAccountByUserName(ldapUserInfo.userName, true) match {
-          case Some(x) if (!x.isRemoved) => {
-            if (settings.ldap.get.mailAttribute.getOrElse("").isEmpty) {
-              updateAccount(x.copy(fullName = ldapUserInfo.fullName))
+          case Some(x) =>
+            if (x.isRemoved) {
+              logger.info("LDAP Authentication Failed: Account is already registered but disabled.")
+              defaultAuthentication(userName, password)
             } else {
-              updateAccount(x.copy(mailAddress = ldapUserInfo.mailAddress, fullName = ldapUserInfo.fullName))
+              if (settings.ldap.get.mailAttribute.getOrElse("").isEmpty) {
+                updateAccount(x.copy(fullName = ldapUserInfo.fullName))
+              } else {
+                updateAccount(x.copy(mailAddress = ldapUserInfo.mailAddress, fullName = ldapUserInfo.fullName))
+              }
+              getAccountByUserName(ldapUserInfo.userName)
             }
-            getAccountByUserName(ldapUserInfo.userName)
-          }
-          case Some(x) if (x.isRemoved) => {
-            logger.info("LDAP Authentication Failed: Account is already registered but disabled.")
-            defaultAuthentication(userName, password)
-          }
           case None =>
             getAccountByMailAddress(ldapUserInfo.mailAddress, true) match {
-              case Some(x) if (!x.isRemoved) => {
-                updateAccount(x.copy(fullName = ldapUserInfo.fullName))
-                getAccountByUserName(ldapUserInfo.userName)
-              }
-              case Some(x) if (x.isRemoved) => {
-                logger.info("LDAP Authentication Failed: Account is already registered but disabled.")
-                defaultAuthentication(userName, password)
-              }
+              case Some(x) =>
+                if (x.isRemoved) {
+                  logger.info("LDAP Authentication Failed: Account is already registered but disabled.")
+                  defaultAuthentication(userName, password)
+                } else {
+                  updateAccount(x.copy(fullName = ldapUserInfo.fullName))
+                  getAccountByUserName(ldapUserInfo.userName)
+                }
               case None => {
                 createAccount(
                   ldapUserInfo.userName,
@@ -107,15 +112,18 @@ trait AccountService {
   def getAccountByUserName(userName: String, includeRemoved: Boolean = false)(implicit s: Session): Option[Account] =
     Accounts filter (t => (t.userName === userName.bind).&&(t.removed === false.bind, !includeRemoved)) firstOption
 
-  def getAccountByUserNameIgnoreCase(userName: String, includeRemoved: Boolean = false)(
-    implicit s: Session
+  def getAccountById(accountId: Long, includeRemoved: Boolean = false)(implicit s: Session): Option[Account] =
+    Accounts filter (t => (t.accountId === accountId.bind).&&(t.removed === false.bind, !includeRemoved)) firstOption
+
+  def getAccountByUserNameIgnoreCase(userName: String, includeRemoved: Boolean = false)(implicit
+    s: Session
   ): Option[Account] =
-    Accounts filter (
-      t => (t.userName.toLowerCase === userName.toLowerCase.bind).&&(t.removed === false.bind, !includeRemoved)
+    Accounts filter (t =>
+      (t.userName.toLowerCase === userName.toLowerCase.bind).&&(t.removed === false.bind, !includeRemoved)
     ) firstOption
 
-  def getAccountsByUserNames(userNames: Set[String], knowns: Set[Account], includeRemoved: Boolean = false)(
-    implicit s: Session
+  def getAccountsByUserNames(userNames: Set[String], knowns: Set[Account], includeRemoved: Boolean = false)(implicit
+    s: Session
   ): Map[String, Account] = {
     val map = knowns.map(a => a.userName -> a).toMap
     val needs = userNames -- map.keySet
@@ -130,17 +138,15 @@ trait AccountService {
     }
   }
 
-  def getAccountByMailAddress(mailAddress: String, includeRemoved: Boolean = false)(
-    implicit s: Session
+  def getAccountByMailAddress(mailAddress: String, includeRemoved: Boolean = false)(implicit
+    s: Session
   ): Option[Account] =
     (Accounts joinLeft AccountExtraMailAddresses on { case (a, e) => a.userName === e.userName })
-      .filter {
-        case (a, x) =>
-          ((a.mailAddress.toLowerCase === mailAddress.toLowerCase.bind) ||
-            (x.map { e =>
-                e.extraMailAddress.toLowerCase === mailAddress.toLowerCase.bind
-              }
-              .getOrElse(false.bind))).&&(a.removed === false.bind, !includeRemoved)
+      .filter { case (a, x) =>
+        ((a.mailAddress.toLowerCase === mailAddress.toLowerCase.bind) ||
+          (x.map { e =>
+            e.extraMailAddress.toLowerCase === mailAddress.toLowerCase.bind
+          }.getOrElse(false.bind))).&&(a.removed === false.bind, !includeRemoved)
       }
       .map { case (a, e) => a } firstOption
 
@@ -154,7 +160,7 @@ trait AccountService {
 
   def isLastAdministrator(account: Account)(implicit s: Session): Boolean = {
     if (account.isAdmin) {
-      (Accounts filter (_.removed === false.bind) filter (_.isAdmin === true.bind) map (_.userName.length)).first == 1
+      Query(Accounts.filter(_.removed === false.bind).filter(_.isAdmin === true.bind).length).first == 1
     } else false
   }
 
@@ -182,8 +188,8 @@ trait AccountService {
       isRemoved = false,
       description = description
     )
-    Accounts insert account
-    account
+    val accountId = Accounts returning Accounts.map(_.accountId) insert account
+    account.copy(accountId = accountId)
   }
 
   def suspendAccount(account: Account)(implicit s: Session): Unit = {
@@ -258,12 +264,12 @@ trait AccountService {
       isRemoved = false,
       description = description
     )
-    Accounts insert group
-    group
+    val accountId = Accounts returning Accounts.map(_.accountId) insert group
+    group.copy(accountId = accountId)
   }
 
-  def updateGroup(groupName: String, description: Option[String], url: Option[String], removed: Boolean)(
-    implicit s: Session
+  def updateGroup(groupName: String, description: Option[String], url: Option[String], removed: Boolean)(implicit
+    s: Session
   ): Unit =
     Accounts
       .filter(_.userName === groupName.bind)
@@ -272,9 +278,8 @@ trait AccountService {
 
   def updateGroupMembers(groupName: String, members: List[(String, Boolean)])(implicit s: Session): Unit = {
     GroupMembers.filter(_.groupName === groupName.bind).delete
-    members.foreach {
-      case (userName, isManager) =>
-        GroupMembers insert GroupMember(groupName, userName, isManager)
+    members.foreach { case (userName, isManager) =>
+      GroupMembers insert GroupMember(groupName, userName, isManager)
     }
   }
 
@@ -313,8 +318,8 @@ trait AccountService {
   /*
    * For account preference
    */
-  def getAccountPreference(userName: String)(
-    implicit s: Session
+  def getAccountPreference(userName: String)(implicit
+    s: Session
   ): Option[AccountPreference] = {
     AccountPreferences filter (_.byPrimaryKey(userName)) firstOption
   }
@@ -337,6 +342,38 @@ trait AccountService {
     }
   }
 
+  def generateResetPasswordToken(mailAddress: String): String = {
+    // default to 10 minutes for backward compatibility
+    generateResetPasswordToken(mailAddress, 10 * 60 * 1000L)
+  }
+
+  def generateResetPasswordToken(mailAddress: String, expirationMillis: Long): String = {
+    val claimsSet = new JWTClaimsSet.Builder()
+      .claim("mailAddress", mailAddress)
+      .expirationTime(new java.util.Date(System.currentTimeMillis() + expirationMillis))
+      .build()
+
+    val signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claimsSet)
+    signedJWT.sign(new MACSigner(AccountService.jwtSecretKey))
+
+    signedJWT.serialize()
+  }
+
+  def decodeResetPasswordToken(token: String): Option[String] = {
+    try {
+      val signedJWT = SignedJWT.parse(token)
+      val verifier = new MACVerifier(AccountService.jwtSecretKey)
+      if (signedJWT.verify(verifier) && new java.util.Date().before(signedJWT.getJWTClaimsSet().getExpirationTime())) {
+        Some(signedJWT.getPayload.toJSONObject.get("mailAddress").toString)
+      } else None
+    } catch {
+      case _: Exception => None
+    }
+  }
 }
 
-object AccountService extends AccountService
+object AccountService extends AccountService {
+  // 256-bit key for HS256 which must be pre-shared
+  val jwtSecretKey = new Array[Byte](32)
+  new SecureRandom().nextBytes(jwtSecretKey)
+}

@@ -1,16 +1,30 @@
 package gitbucket.core.service
 
 import gitbucket.core.api.JsonFormat
-import gitbucket.core.service.WebHookService._
+import gitbucket.core.service.WebHookService.*
 import org.scalatest.Assertion
 import org.scalatest.funsuite.AnyFunSuite
 
 class WebHookJsonFormatSpec extends AnyFunSuite {
-  import gitbucket.core.api.ApiSpecModels._
+  import gitbucket.core.api.ApiSpecModels.*
 
   private def assert(payload: WebHookPayload, expected: String): Assertion = {
     val json = JsonFormat(payload)
     assert(json == expected.replaceAll("\n", ""))
+  }
+
+  test("webhook payload includes non-zero repository id") {
+    assert(apiRepository.id != 0)
+    val json = JsonFormat(
+      WebHookIssuesPayload(
+        action = "opened",
+        number = 1,
+        repository = apiRepository,
+        issue = apiIssue,
+        sender = apiUser
+      )
+    )
+    assert(json.contains(s""""id":${apiRepository.id}"""))
   }
 
   test("WebHookCreatePayload") {
@@ -26,7 +40,7 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
         |"description":"This your first repo!",
         |"ref":"v1.0",
         |"ref_type":"tag",
-        |"master_branch":"master",
+        |"master_branch":"main",
         |"repository":$jsonRepository,
         |"pusher_type":"user"
         |}""".stripMargin
@@ -34,19 +48,19 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
   }
 
   test("WebHookPushPayload") {
-    import gitbucket.core.util.GitSpecUtil._
+    import gitbucket.core.util.GitSpecUtil.*
     import org.eclipse.jgit.lib.{Constants, ObjectId}
 
     withTestRepository { git =>
       createFile(git, Constants.HEAD, "README.md", "body1", message = "initial")
       createFile(git, Constants.HEAD, "README.md", "body1\nbody2", message = "modified")
 
-      val branchId = git.getRepository.resolve("master")
+      val branchId = git.getRepository.resolve("main")
 
       val payload = WebHookPushPayload(
         git = git,
         sender = account,
-        refName = "refs/heads/master",
+        refName = "refs/heads/main",
         repositoryInfo = repositoryInfo,
         commits = List(commitInfo(branchId.name)),
         repositoryOwner = account,
@@ -56,7 +70,7 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
       val expected = s"""{
           |"pusher":{"name":"octocat","email":"octocat@example.com"},
           |"sender":$jsonUser,
-          |"ref":"refs/heads/master",
+          |"ref":"refs/heads/main",
           |"before":"6dcb09b5b57875f334f61aebed695e2e4193db5e",
           |"after":"6dcb09b5b57875f334f61aebed695e2e4193db5e",
           |"commits":[${jsonCommit(branchId.name)}],
@@ -91,7 +105,7 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
       action = "closed",
       issue = issuePR,
       issueUser = account,
-      assignee = Some(account),
+      assignees = List(account),
       pullRequest = pullRequest,
       headRepository = repositoryInfo,
       headOwner = account,
@@ -119,9 +133,10 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
       commentUser = account,
       repository = repositoryInfo,
       repositoryUser = account,
-      assignedUser = Some(account),
+      assignees = List(account),
       sender = account,
-      labels = List(label)
+      labels = List(label),
+      milestone = Some(apiMilestone)
     )
     val expected = s"""{
         |"action":"created",
@@ -139,7 +154,7 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
       comment = commitComment,
       issue = issuePR,
       issueUser = account,
-      assignee = Some(account),
+      assignees = List(account),
       pullRequest = pullRequest,
       headRepository = repositoryInfo,
       headOwner = account,
@@ -168,6 +183,21 @@ class WebHookJsonFormatSpec extends AnyFunSuite {
     )
     val expected = s"""{
         |"pages":[{"page_name":"Home","title":"Home","action":"edited","sha":"6dcb09b5b57875f334f61aebed695e2e4193db5e","html_url":"http://gitbucket.exmple.com/octocat/Hello-World/wiki/Home"}],
+        |"repository":$jsonRepository,
+        |"sender":$jsonUser
+        |}""".stripMargin
+    assert(payload, expected)
+  }
+
+  test("WebHookGollumPayload encodes the page name in html_url") {
+    val payload = WebHookGollumPayload(
+      pages = Seq(("created", "100% a+b", sha1)),
+      repository = repositoryInfo,
+      repositoryUser = account,
+      sender = account
+    )
+    val expected = s"""{
+        |"pages":[{"page_name":"100% a+b","title":"100% a+b","action":"created","sha":"6dcb09b5b57875f334f61aebed695e2e4193db5e","html_url":"http://gitbucket.exmple.com/octocat/Hello-World/wiki/100%25%20a%2Bb"}],
         |"repository":$jsonRepository,
         |"sender":$jsonUser
         |}""".stripMargin

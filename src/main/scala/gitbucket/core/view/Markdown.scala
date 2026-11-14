@@ -9,6 +9,7 @@ import gitbucket.core.service.{RepositoryService, RequestCache}
 import gitbucket.core.util.StringUtil
 import io.github.gitbucket.markedj._
 import io.github.gitbucket.markedj.Utils._
+import gitbucket.core.service.WikiService
 
 object Markdown {
 
@@ -75,7 +76,8 @@ object Markdown {
   )(implicit val context: Context)
       extends Renderer(options)
       with LinkConverter
-      with RequestCache {
+      with RequestCache
+      with WikiService {
 
     override def heading(text: String, level: Int, raw: String): String = {
       val id = generateAnchorName(text)
@@ -192,7 +194,16 @@ object Markdown {
               .stripSuffix(".git") + "/blob/" + branch + "/" + urlWithRawParam
           }
         } else {
-          repository.httpUrl.replaceFirst("/git/", "/").stripSuffix(".git") + "/wiki/_blob/" + url
+          // URL is being modified to link to the image file on the repository, but users may want to link to the page if the page name is a link.
+          // If the wiki page cannot be retrieved from the url, the blob address is returned; otherwise, the page address is returned.
+          val pathElems = context.currentPath.split("/")
+          val owner = pathElems(1)
+          val repos = pathElems(2)
+          if (getWikiPage(owner, repos, url, getWikiBranch(owner, repos)) == None) {
+            repository.httpUrl.replaceFirst("/git/", "/").stripSuffix(".git") + "/wiki/_blob/" + url
+          } else {
+            repository.httpUrl.replaceFirst("/git/", "/").stripSuffix(".git") + "/wiki/" + url
+          }
         }
       }
     }

@@ -11,13 +11,13 @@ import Implicits._
  */
 trait OneselfAuthenticator { self: ControllerBase =>
   protected def oneselfOnly(action: => Any) = { authenticate(action) }
-  protected def oneselfOnly[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
+  protected def oneselfOnlyWithForm[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
 
   private def authenticate(action: => Any) = {
     context.loginAccount match {
-      case Some(x) if (x.isAdmin)                      => action
-      case Some(x) if (request.paths(0) == x.userName) => action
-      case _                                           => Unauthorized()
+      case Some(x) if x.isAdmin                      => action
+      case Some(x) if request.paths(0) == x.userName => action
+      case _                                         => Unauthorized()
     }
   }
 }
@@ -25,23 +25,25 @@ trait OneselfAuthenticator { self: ControllerBase =>
 /**
  * Allows only the repository owner and administrators.
  */
-trait OwnerAuthenticator { self: ControllerBase with RepositoryService with AccountService =>
-  protected def ownerOnly(action: (RepositoryInfo) => Any) = { authenticate(action) }
-  protected def ownerOnly[T](action: (T, RepositoryInfo) => Any) = (form: T) => { authenticate(action(form, _)) }
+trait OwnerAuthenticator { self: ControllerBase & RepositoryService & AccountService =>
+  protected def ownerOnly(action: RepositoryInfo => Any) = { authenticate(action) }
+  protected def ownerOnlyWithForm[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
+    authenticate(action(form, _))
+  }
 
   private def authenticate(action: (RepositoryInfo) => Any) = {
     val userName = params("owner")
     val repoName = params("repository")
     getRepository(userName, repoName).map { repository =>
       context.loginAccount match {
-        case Some(x) if (x.isAdmin)                      => action(repository)
-        case Some(x) if (repository.owner == x.userName) => action(repository)
+        case Some(x) if x.isAdmin                      => action(repository)
+        case Some(x) if repository.owner == x.userName => action(repository)
         // TODO Repository management is allowed for only group managers?
-        case Some(x) if (getGroupMembers(repository.owner).exists { m =>
-              m.userName == x.userName && m.isManager == true
-            }) =>
+        case Some(x) if getGroupMembers(repository.owner).exists { m =>
+              m.userName == x.userName && m.isManager
+            } =>
           action(repository)
-        case Some(x) if (getCollaboratorUserNames(userName, repoName, Seq(Role.ADMIN)).contains(x.userName)) =>
+        case Some(x) if getCollaboratorUserNames(userName, repoName, Seq(Role.ADMIN)).contains(x.userName) =>
           action(repository)
         case _ => Unauthorized()
       }
@@ -54,7 +56,7 @@ trait OwnerAuthenticator { self: ControllerBase with RepositoryService with Acco
  */
 trait UsersAuthenticator { self: ControllerBase =>
   protected def usersOnly(action: => Any) = { authenticate(action) }
-  protected def usersOnly[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
+  protected def usersOnlyWithForm[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
 
   private def authenticate(action: => Any) = {
     context.loginAccount match {
@@ -69,7 +71,7 @@ trait UsersAuthenticator { self: ControllerBase =>
  */
 trait AdminAuthenticator { self: ControllerBase =>
   protected def adminOnly(action: => Any) = { authenticate(action) }
-  protected def adminOnly[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
+  protected def adminOnlyWithForm[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
 
   private def authenticate(action: => Any) = {
     context.loginAccount match {
@@ -82,11 +84,13 @@ trait AdminAuthenticator { self: ControllerBase =>
 /**
  * Allows only guests and signed in users who can access the repository.
  */
-trait ReferrerAuthenticator { self: ControllerBase with RepositoryService with AccountService =>
-  protected def referrersOnly(action: (RepositoryInfo) => Any) = { authenticate(action) }
-  protected def referrersOnly[T](action: (T, RepositoryInfo) => Any) = (form: T) => { authenticate(action(form, _)) }
+trait ReferrerAuthenticator { self: ControllerBase & RepositoryService & AccountService =>
+  protected def referrersOnly(action: RepositoryInfo => Any) = { authenticate(action) }
+  protected def referrersOnlyWithForm[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
+    authenticate(action(form, _))
+  }
 
-  private def authenticate(action: (RepositoryInfo) => Any) = {
+  private def authenticate(action: RepositoryInfo => Any) = {
     val userName = params("owner")
     val repoName = params("repository")
     getRepository(userName, repoName).map { repository =>
@@ -102,17 +106,17 @@ trait ReferrerAuthenticator { self: ControllerBase with RepositoryService with A
 /**
  * Allows only signed in users who have read permission for the repository.
  */
-trait ReadableUsersAuthenticator { self: ControllerBase with RepositoryService with AccountService =>
-  protected def readableUsersOnly(action: (RepositoryInfo) => Any) = { authenticate(action) }
-  protected def readableUsersOnly[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
+trait ReadableUsersAuthenticator { self: ControllerBase & RepositoryService & AccountService =>
+  protected def readableUsersOnly(action: RepositoryInfo => Any) = { authenticate(action) }
+  protected def readableUsersOnlyWithForm[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
     authenticate(action(form, _))
   }
 
-  private def authenticate(action: (RepositoryInfo) => Any) = {
+  private def authenticate(action: RepositoryInfo => Any) = {
     val userName = params("owner")
     val repoName = params("repository")
     getRepository(userName, repoName).map { repository =>
-      if (isReadable(repository.repository, context.loginAccount) || !repository.repository.isPrivate) {
+      if (isReadable(repository.repository, context.loginAccount)) {
         action(repository)
       } else {
         Unauthorized()
@@ -124,25 +128,20 @@ trait ReadableUsersAuthenticator { self: ControllerBase with RepositoryService w
 /**
  * Allows only signed in users who have write permission for the repository.
  */
-trait WritableUsersAuthenticator { self: ControllerBase with RepositoryService with AccountService =>
-  protected def writableUsersOnly(action: (RepositoryInfo) => Any) = { authenticate(action) }
-  protected def writableUsersOnly[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
+trait WritableUsersAuthenticator { self: ControllerBase & RepositoryService & AccountService =>
+  protected def writableUsersOnly(action: RepositoryInfo => Any) = { authenticate(action) }
+  protected def writableUsersOnlyWithForm[T](action: (T, RepositoryInfo) => Any) = (form: T) => {
     authenticate(action(form, _))
   }
 
-  private def authenticate(action: (RepositoryInfo) => Any) = {
+  private def authenticate(action: RepositoryInfo => Any) = {
     val userName = params("owner")
     val repoName = params("repository")
     getRepository(userName, repoName).map { repository =>
-      context.loginAccount match {
-        case Some(x) if (x.isAdmin)                                                          => action(repository)
-        case Some(x) if (userName == x.userName)                                             => action(repository)
-        case Some(x) if (getGroupMembers(repository.owner).exists(_.userName == x.userName)) => action(repository)
-        case Some(x)
-            if (getCollaboratorUserNames(userName, repoName, Seq(Role.ADMIN, Role.DEVELOPER))
-              .contains(x.userName)) =>
-          action(repository)
-        case _ => Unauthorized()
+      if (isWritable(repository.repository, context.loginAccount)) {
+        action(repository)
+      } else {
+        Unauthorized()
       }
     } getOrElse NotFound()
   }
@@ -151,17 +150,17 @@ trait WritableUsersAuthenticator { self: ControllerBase with RepositoryService w
 /**
  * Allows only the group managers.
  */
-trait GroupManagerAuthenticator { self: ControllerBase with AccountService =>
+trait GroupManagerAuthenticator { self: ControllerBase & AccountService =>
   protected def managersOnly(action: => Any) = { authenticate(action) }
-  protected def managersOnly[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
+  protected def managersOnlyWithForm[T](action: T => Any) = (form: T) => { authenticate(action(form)) }
 
   private def authenticate(action: => Any) = {
     context.loginAccount match {
       case Some(x) if x.isAdmin                      => action
       case Some(x) if x.userName == request.paths(0) => action
-      case Some(x) if (getGroupMembers(request.paths(0)).exists { member =>
+      case Some(x) if getGroupMembers(request.paths(0)).exists { member =>
             member.userName == x.userName && member.isManager
-          }) =>
+          } =>
         action
       case _ => Unauthorized()
     }

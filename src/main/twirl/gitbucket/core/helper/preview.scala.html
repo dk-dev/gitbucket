@@ -16,9 +16,23 @@
   uid: Long = new java.util.Date().getTime())(implicit context: gitbucket.core.controller.Context)
 @import gitbucket.core.view.helpers
 <div class="tabbable">
-  <ul class="nav nav-tabs fill-width" style="margin-bottom: 10px;">
+  <ul class="nav nav-tabs">
     <li class="active"><a href="#tab@uid" data-toggle="tab" id="write@uid">Write</a></li>
     <li><a href="#tab@(uid + 1)" data-toggle="tab" id="preview@uid">Preview</a></li>
+    <li class="nav navbar-nav navbar-default" id="markdown-toolbar@uid" style="background-color: inherit;">
+      <div class="btn-group">
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-bold@uid" title="Bold" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-bold"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-italic@uid" title="Italic" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-italic"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-code@uid" title="Code" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-code"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-link@uid" title="Link" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-link"></i></button>
+
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-heading@uid" title="Heading" style="margin-left: 4px; margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-header"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-quote@uid" title="Quote" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-quote-right"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-list-ul@uid" title="Unordered List" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-list-ul"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-list-ol@uid" title="Ordered List" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa fa-list-ol"></i></button>
+        <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-task@uid" title="Task List" style="margin-top: 8px; margin-bottom: 8px;"><i class="fa  fa-check-square-o"></i></button>
+      </div>
+    </li>
   </ul>
   <div class="tab-content">
     <div class="tab-pane active" style="margin-top: 4px;" id="tab@uid">
@@ -40,10 +54,74 @@
     </div>
   </div>
 </div>
-<link  href="@helpers.assets("/vendors/google-code-prettify/prettify.css")" type="text/css" rel="stylesheet"/>
-<script src="@helpers.assets("/vendors/google-code-prettify/prettify.js")"></script>
 <script>
 $(function(){
+  // load textarea.js
+  var script = document.getElementById("textareajs");
+  if (script == null) {
+    script = document.createElement("script");
+    script.id = "textareajs";
+    script.src = '@helpers.assets("/common/js/textarea.js")';
+    document.body.appendChild(script);
+  }
+
+  // target textarea
+  const textarea = document.getElementById("content@uid");
+
+  // for capture markdown bold button clicks
+  const markedownBold = document.getElementById("markdown-bold@uid");
+  markedownBold.addEventListener('click', (e) => {
+    surroundSelection(textarea, "**", "**", false);
+  }, true);
+
+  // for capture markdown italic button clicks
+  const markdownItalic = document.getElementById("markdown-italic@uid");
+  markdownItalic.addEventListener('click', (e) => {
+    surroundSelection(textarea, "*", "*", false);
+  }, true);
+
+  // for capture markdown code button clicks
+  const markdownCode = document.getElementById("markdown-code@uid");
+  markdownCode.addEventListener('click', (e) => {
+    setCode(textarea);
+  }, true);
+
+  // for capture markdown link button clicks
+  const markdownLink = document.getElementById("markdown-link@uid");
+  markdownLink.addEventListener('click', (e) => {
+    surroundSelection(textarea, "[", "]()", true);
+  }, true);
+
+  // for capture markdown heading button clicks
+  const markdownHeading = document.getElementById("markdown-heading@uid");
+  markdownHeading.addEventListener('click', (e) => {
+    setHeadding(textarea);
+  }, true);
+
+  // for capture markdown quote button clicks
+  const markdownQuote = document.getElementById("markdown-quote@uid");
+  markdownQuote.addEventListener('click', (e) => {
+    setQuote(textarea);
+  }, true);
+
+  // for capture markdown list ul button clicks
+  const markdownListUl = document.getElementById("markdown-list-ul@uid");
+  markdownListUl.addEventListener('click', (e) => {
+    setUnorderedList(textarea);
+  }, true);
+
+  // for capture markdown list ul button clicks
+  const markdownListOl = document.getElementById("markdown-list-ol@uid");
+  markdownListOl.addEventListener('click', (e) => {
+    setOrderedList(textarea);
+  }, true);
+
+  // for capture markdown list ul button clicks
+  const markdownTask = document.getElementById("markdown-task@uid");
+  markdownTask.addEventListener('click', (e) => {
+    setTaskList(textarea);
+  }, true);
+
   @if(elastic){
     $('#content@uid').elastic();
     $('#content@uid').trigger('blur');
@@ -54,11 +132,13 @@ $(function(){
 
   $('#write@uid').on('shown.bs.tab', function(){
     $('#content@uid').trigger('focus');
+    $('#markdown-toolbar@uid').show()
   });
 
   $('#preview@uid').click(function(){
     $('#preview-area@uid').html('<img src="@helpers.assets("/common/images/indicator.gif")"> Previewing...');
     $.post('@helpers.url(repository)/_preview', {
+      filename         : "temporary.md",
       content          : $('#content@uid').val(),
       enableWikiLink   : @enableWikiLink,
       enableRefsLink   : @enableRefsLink,
@@ -69,6 +149,7 @@ $(function(){
       $('#preview-area@uid input').prop('disabled', true);
       prettyPrint();
     });
+    $('#markdown-toolbar@uid').hide();
   });
 });
 </script>

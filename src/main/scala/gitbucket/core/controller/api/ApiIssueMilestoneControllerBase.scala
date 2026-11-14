@@ -2,13 +2,12 @@ package gitbucket.core.controller.api
 import gitbucket.core.api._
 import gitbucket.core.controller.ControllerBase
 import gitbucket.core.service.MilestonesService
-import gitbucket.core.service.RepositoryService.RepositoryInfo
 import gitbucket.core.util.{ReferrerAuthenticator, WritableUsersAuthenticator}
 import gitbucket.core.util.Implicits._
 import org.scalatra.NoContent
 
 trait ApiIssueMilestoneControllerBase extends ControllerBase {
-  self: MilestonesService with WritableUsersAuthenticator with ReferrerAuthenticator =>
+  self: MilestonesService & WritableUsersAuthenticator & ReferrerAuthenticator =>
 
   /*
    * i. List milestones
@@ -17,8 +16,10 @@ trait ApiIssueMilestoneControllerBase extends ControllerBase {
   get("/api/v3/repos/:owner/:repository/milestones")(referrersOnly { repository =>
     val state = params.getOrElse("state", "all")
     // TODO "sort", "direction" params should be implemented.
-    val apiMilestones = (for (milestoneWithIssue <- getMilestonesWithIssueCount(repository.owner, repository.name)
-                                .sortBy(p => p._1.milestoneId))
+    val apiMilestones = (for (
+      milestoneWithIssue <- getMilestonesWithIssueCount(repository.owner, repository.name)
+        .sortBy(p => p._1.milestoneId)
+    )
       yield {
         ApiMilestone(
           repository.repository,
@@ -28,7 +29,7 @@ trait ApiIssueMilestoneControllerBase extends ControllerBase {
         )
       }).reverse
     state match {
-      case "all" => JsonFormat(apiMilestones)
+      case "all"             => JsonFormat(apiMilestones)
       case "open" | "closed" =>
         JsonFormat(
           apiMilestones.filter(p => p.state == state)
@@ -102,17 +103,4 @@ trait ApiIssueMilestoneControllerBase extends ControllerBase {
     NoContent()
   })
 
-  private def getApiMilestone(repository: RepositoryInfo, milestoneId: Int): Option[ApiMilestone] = {
-    getMilestonesWithIssueCount(repository.owner, repository.name)
-      .find(p => p._1.milestoneId == milestoneId)
-      .map(
-        milestoneWithIssue =>
-          ApiMilestone(
-            repository.repository,
-            milestoneWithIssue._1,
-            milestoneWithIssue._2,
-            milestoneWithIssue._3
-        )
-      )
-  }
 }

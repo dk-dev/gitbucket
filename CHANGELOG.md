@@ -1,20 +1,169 @@
 # Changelog
 All changes to the project will be documented in this file.
 
-### 4.35.3 - 14 Jan 2021
+### 4.48.0 - 20 Sep 2026
+- Add numeric user/account id to GitHub compatibility api; add new API for managing users by numeric id
+- Authentication-related API changes. Some plugins might not work with this version
+- Fix a bug in the last admin user delete prevention; add Danger-zone tab to the user settings page
+
+## 4.47.1 - 16 Sep 2026
+- Fix an error in Gist plugin
+
+## 4.47.0 - 9 Aug 2026
+- Add more security options for creating repositories by cloning
+- Make the reset password token expiration period configurable
+- Improve GitHub API compatibility for repository IDs, fork management
+- Fix issue assignees not being preserved when a repository is renamed or transferred
+- Improvements and bug fixes for markdown format actions in the text editor
+
+## 4.46.1 - 18 Apr 2026
+- Fix NullPointerException that could happen in the commits page
+- Add options to improve pull request compare performance
+
+## 4.46.0 - 7 Mar 2026
+- Add support for reverting pull request
+- Add markdown toolbar
+- Enable text completion in Ace editor
+- Apply Ace editor for Wiki editing
+- Webhook security: SHA-256 support
+- Preserve UTF-8 BOM when editing files in browser
+
+## 4.45.0 - 10 Jan 2026
+- Add new option to show full username on UI
+- Support render plugin in issues, pull requests, wiki and commit comments
+- Support link to other pages from Wiki page using Wiki link syntax
+
+## 4.44.0 - 23 Sep 2025
+- Enhanced branch protection which supports the following settings:
+  - Prevent pushes from non-allowed users
+  - Whether to apply restrictions to administrator users as well
+- Improve logging for initialization errors
+
+## 4.43.0 - 29 Jun 2025
+- Upgrade H2 database from 1.x to 2.x
+
+Note that upgrading from h2 1.x to 2.x requires data file migration: https://www.h2database.com/html/migration-to-v2.html
+
+It can't be done automatically using GitBucket's auto migration mechanism because it relies on database itself. So, users who use h2 will have to dump and recreate their database manually with the following steps:
+```bash
+# Export database using the current version of H2
+$ curl -O https://repo1.maven.org/maven2/com/h2database/h2/1.4.199/h2-1.4.199.jar
+$ java -cp h2-1.4.199.jar org.h2.tools.Script -url "jdbc:h2:~/.gitbucket/data" -user sa -password sa -script dump.sql
+
+# Recreate database using the new version of H2
+$ curl -O https://repo1.maven.org/maven2/com/h2database/h2/2.3.232/h2-2.3.232.jar
+$ java -cp h2-2.3.232.jar org.h2.tools.RunScript -url "jdbc:h2:~/.gitbucket/data" -user sa -password sa -script dump.sql
+```
+
+In addition, if `~/.gitbucket/database.conf` has the following configuration, remove `;MVCC=true` from `url`.
+```
+db {
+  url = "jdbc:h2:${DatabaseHome};MVCC=true" // => "jdbc:h2:${DatabaseHome}"
+  ...
+}
+```
+
+## 4.42.1 - 20 Jan 2025
+- Fix LDAP issue with SSL
+
+## 4.42.0 - 30 Dec 2024
+- Increase max branch name length 100 -> 255
+- Fix some GitHub incompatible Web APIs
+- Apply user-defined CSS after all plugins
+- Improve performance of listing commit logs
+- Drop Java 11 support. Java 17 is now required
+
+## 4.41.0 - 18 May 2024
+- Simplify pull request UI
+- Keyword search for issues and pull requests
+- New settings for max files and lines limit in showing diff
+- Adjust the default branch automatically when cloning external repository
+- Fix layout of branch selector
+- Performance improvement for listing branches
+- Upgrade internal libraries
+
+## 4.40.0 - 22 Oct 2023
+- Configurable default branch name
+- Support custom fields of issues and pull requests in search condition
+- Create pull request from default branch of forked repositories
+- News feed shows activities of all visible repositories
+- Drop Java 8 support
+- Improve git push performance
+
+## 4.39.0 - 29 Apr 2023
+- Support enum type in custom fields of Issues and Pull requests
+- Hide large diffs by default
+- Add new options to make it possible to run GitBucket using multiple machines
+- Fix many API issues
+
+## 4.38.4 - 2 Nov 2022
+- Downgrade MariaDB JDBC drive to avoid unknown error
+
+## 4.38.3 - 30 Oct 2022
+- Fix several issues around multiple assignees in issues and pull requests
+- Fix IllegalStateException when returning unknown avatar image
+
+## 4.38.2 - 20 Sep 2022
+- Resurrect assignee icons on the issue list
+
+## 4.38.1 - 10 Sep 2022
+- Fix comment diff in Chrome 105
+- Fix Markdown table CSS
+- Fix HTML rendering of multiple assignees
+
+## 4.38.0 - 3 Sep 2022
+- Support multiple assignees for Issues and Pull requests
+- Custom fields for issues and pull requests
+- Reset password by users
+- Allow to configure Jetty idle timeout in standalone mode
+- Horizontal scroll for too wide tables in Markdown
+- Hide header content on signin and register page
+- Fix the default charset of the online editor in the repository viewer
+- Fix the milestone count
+- Some improvements and bugfixes for WebAPI and WebHook
+
+## 4.37.2 - 16 Jan 2022
+- Fixed a security issue reported by [Positive Technologies](https://www.ptsecurity.com/ww-en/). Great thanks for their detailed report and close support!
+
+## 4.37.1 - 14 Dec 2021
+- Update gist-plugin and notification-plugin
+- Fix SSHCommand extension point for apache-sshd 2.x
+
+## 4.37.0 - 11 Dec 2021
+- Enhance Git Reference APIs
+- Add milestone data to issue list API
+- Support "all" in issue list API
+- Support EDDSA in signed commit verification
+- Support custom SSH url
+- Relax max passward length limitation
+- Relax max webhook url length limitation
+
+## 4.36.2 - 16 Aug 2021
+- Escape user name in avatar image tag
+
+## 4.36.1 - 22 Jul 2021
+- Bump gitbucket-gist-plugin to 4.21.0
+
+## 4.36.0 - 17 Jul 2021
+- Tag selector in the repository viewer
+- Link issues/pull requests of other repositories
+- Files and lines can be linked in the diff view
+- Option to disable XSS protection
+
+## 4.35.3 - 14 Jan 2021
 - Fix a bug that Wiki page cannot be deleted
 - Fix a deployment issue on Tomcat
 
-### 4.35.2 - 30 Dec 2020
+## 4.35.2 - 30 Dec 2020
 - Upgrade gitbucket-notifications-plugin to 1.10.0
 - Upgrade oauth2-oidc-sdk to 8.29.1 to solve dependency issue
 
-### 4.35.1 - 29 Dec 2020
+## 4.35.1 - 29 Dec 2020
 - Fix database migration issue which happens if webhook is configured
 - Call push webhook when pull request is merged
 - Show commit status at commits tab of pull request
 
-### 4.35.0 - 25 Dec 2020
+## 4.35.0 - 25 Dec 2020
 - Editor and source viewer color theme
 - Auto completion for issues and pull requests
 - Upload image from clipboard

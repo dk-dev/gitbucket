@@ -3,7 +3,6 @@ package gitbucket.core.service
 import gitbucket.core.model.Profile.profile.blockingApi._
 import gitbucket.core.model.Profile.{AccountFederations, Accounts}
 import gitbucket.core.model.{Account, AccountFederation}
-import gitbucket.core.util.SyntaxSugars.~
 import org.slf4j.LoggerFactory
 
 trait AccountFederationService {
@@ -51,15 +50,15 @@ trait AccountFederationService {
    * @param preferredUserName Username
    * @return Available username
    */
-  def findAvailableUserName(preferredUserName: Option[String], mailAddress: String)(
-    implicit s: Session
+  def findAvailableUserName(preferredUserName: Option[String], mailAddress: String)(implicit
+    s: Session
   ): Option[String] = {
     preferredUserName
       .flatMap(n => extractSafeStringForUserName(n))
       .orElse(extractSafeStringForUserName(mailAddress)) match {
       case Some(safeUserName) =>
         getAccountByUserName(safeUserName, includeRemoved = true) match {
-          case None => Some(safeUserName)
+          case None    => Some(safeUserName)
           case Some(_) =>
             logger.info(
               s"User ($safeUserName) already exists. preferredUserName=$preferredUserName, mailAddress=$mailAddress"
@@ -76,8 +75,8 @@ trait AccountFederationService {
     AccountFederations
       .filter(_.byPrimaryKey(issuer, subject))
       .join(Accounts)
-      .on { case af ~ ac => af.userName === ac.userName }
-      .map { case _ ~ ac => ac }
+      .on { case af -> ac => af.userName === ac.userName }
+      .map { case _ -> ac => ac }
       .firstOption
 
   def hasAccountFederation(userName: String)(implicit s: Session): Boolean =

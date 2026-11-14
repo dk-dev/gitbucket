@@ -928,30 +928,38 @@ pre.reset.discussion-item-content-text{
   color: inherit;
 }
 
+.discussion-item-icon .octicon-bookmark,
+.discussion-item-icon .octicon-person,
+.discussion-item-icon .octicon-git-branch{
+  padding-left: 5px;
+}
+
 .discussion-item-merge .discussion-item-icon {
   background-color: #6e5494;
   color: white;
   padding-top: 1px;
-  padding-left: 3px;
+  padding-left: 4px;
 }
 
 .discussion-item-close .discussion-item-icon {
   background-color: #bd2c00;
   color: white;
+  padding-left: 2px;
   padding-top: 1px;
 }
 
 .discussion-item-delete_branch .discussion-item-icon {
-  padding-left: 2px;
-  padding-top: 1px;
   background-color: #767676;
   color: white;
+  padding-left: 2px;
+  padding-top: 1px;
 }
 
 .discussion-item-reopen .discussion-item-icon {
   background-color: #6cc644;
-  padding-top: 1px;
   color: white;
+  padding-left: 7px;
+  padding-top: 1px;
 }
 
 .discussion-item-delete-comment .discussion-item-icon {
@@ -1526,15 +1534,16 @@ div.markdown-body code {
 }
 
 div.markdown-body table {
-  /*width: 100%;*/
-  margin-bottom: 20px;
+  max-width: 100%;
+  width: max-content;
+  overflow: auto;
+  display: block;
 }
 
 div.markdown-body table th,
 div.markdown-body table td {
   padding: 8px;
   line-height: 20px;
-  text-align: left;
   vertical-align: top;
   border-top: 1px solid #dddddd;
 }
@@ -1902,14 +1911,16 @@ body.sidebar-collapse .main-sidebar li:hover > a > span {
   text-overflow: ellipsis;
 }
 
-body.sidebar-collapse .main-sidebar li.menu-item-hover:not(:hover) span.pull-right-container {
-  display: inline !important;
-  position: absolute;
-  top: 8px;
-  right: 0px;
-  font-size: 9px;
-}
+@media (min-width: 768px) {
+  body.sidebar-collapse .main-sidebar li.menu-item-hover:not(:hover) span.pull-right-container {
+    display: inline !important;
+    position: absolute;
+    top: 8px;
+    right: 0px;
+    font-size: 9px;
+  }
 
-body.sidebar-collapse .main-sidebar li.treeview:not(:hover) span.pull-right-container span.label {
-  padding: 2px 4px;
+  body.sidebar-collapse .main-sidebar li.treeview:not(:hover) span.pull-right-container span.label {
+    padding: 2px 4px;
+  }
 }

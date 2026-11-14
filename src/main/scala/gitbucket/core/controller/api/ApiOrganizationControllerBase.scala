@@ -4,9 +4,10 @@ import gitbucket.core.controller.ControllerBase
 import gitbucket.core.service.{AccountService, RepositoryService}
 import gitbucket.core.util.Implicits._
 import gitbucket.core.util.{AdminAuthenticator, UsersAuthenticator}
+import org.scalatra.BadRequest
 
 trait ApiOrganizationControllerBase extends ControllerBase {
-  self: RepositoryService with AccountService with AdminAuthenticator with UsersAuthenticator =>
+  self: RepositoryService & AccountService & AdminAuthenticator & UsersAuthenticator =>
 
   /*
    * i. List your organizations
@@ -52,9 +53,7 @@ trait ApiOrganizationControllerBase extends ControllerBase {
    * https://developer.github.com/enterprise/2.14/v3/enterprise-admin/orgs/#create-an-organization
    */
   post("/api/v3/admin/organizations")(adminOnly {
-    for {
-      data <- extractFromJsonBody[CreateAGroup]
-    } yield {
+    extractFromJsonBody[CreateAGroup].map { data =>
       val group = createGroup(
         data.login,
         data.profile_name,
@@ -62,7 +61,7 @@ trait ApiOrganizationControllerBase extends ControllerBase {
       )
       updateGroupMembers(data.login, List(data.admin -> true))
       JsonFormat(ApiGroup(group))
-    }
+    } getOrElse BadRequest()
   })
 
   /*
@@ -71,6 +70,6 @@ trait ApiOrganizationControllerBase extends ControllerBase {
    */
 
   /*
- * should implement delete an organization API?
- */
+   * should implement delete an organization API?
+   */
 }

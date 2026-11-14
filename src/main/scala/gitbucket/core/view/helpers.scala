@@ -53,8 +53,8 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   def datetimeAgoRecentOnly(date: Date): String = {
     val duration = new Date().getTime - date.getTime
     timeUnits.find(tuple => duration / tuple._1 > 0) match {
-      case Some((_, "month")) => s"on ${new SimpleDateFormat("d MMM", Locale.ENGLISH).format(date)}"
-      case Some((_, "year"))  => s"on ${new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(date)}"
+      case Some((_, "month"))            => s"on ${new SimpleDateFormat("d MMM", Locale.ENGLISH).format(date)}"
+      case Some((_, "year"))             => s"on ${new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(date)}"
       case Some((unitValue, unitString)) =>
         val value = duration / unitValue
         s"${value} ${unitString}${if (value > 1) "s" else ""} ago"
@@ -101,6 +101,7 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   /**
    * Converts Markdown of Wiki pages to HTML.
    */
+  @deprecated("This doesn't apply render plugins. Should use renderMarkup() instead.", "4.45.0")
   def markdown(
     markdown: String,
     repository: RepositoryService.RepositoryInfo,
@@ -139,14 +140,29 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
     repository: RepositoryService.RepositoryInfo,
     enableWikiLink: Boolean,
     enableRefsLink: Boolean,
-    enableAnchor: Boolean
+    enableAnchor: Boolean,
+    enableLineBreaks: Boolean,
+    enableTaskList: Boolean,
+    hasWritePermission: Boolean = false
   )(implicit context: Context): Html = {
 
     val fileName = filePath.last.toLowerCase
     val extension = FileUtil.getExtension(fileName)
     val renderer = PluginRegistry().getRenderer(extension)
     renderer.render(
-      RenderRequest(filePath, fileContent, branch, repository, enableWikiLink, enableRefsLink, enableAnchor, context)
+      RenderRequest(
+        filePath,
+        fileContent,
+        branch,
+        repository,
+        enableWikiLink,
+        enableRefsLink,
+        enableAnchor,
+        enableLineBreaks,
+        enableTaskList,
+        hasWritePermission,
+        context
+      )
     )
   }
 
@@ -160,8 +176,8 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   /**
    * Creates a link to the issue or the pull request from the issue id.
    */
-  def issueLink(owner: String, repository: String, issueId: Int, title: String)(
-    implicit context: Context
+  def issueLink(owner: String, repository: String, issueId: Int, title: String)(implicit
+    context: Context
   ): Html = {
     Html(createIssueLink(owner, repository, issueId, title))
   }
@@ -169,8 +185,8 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   /**
    * Creates a global link to the issue or the pull request from the issue id.
    */
-  def issueGlobalLink(owner: String, repository: String, issueId: Int, title: String)(
-    implicit context: Context
+  def issueGlobalLink(owner: String, repository: String, issueId: Int, title: String)(implicit
+    context: Context
   ): Html = {
     Html(createGlobalIssueLink(owner, repository, issueId, title))
   }
@@ -179,8 +195,8 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
    * Returns &lt;img&gt; which displays the avatar icon for the given user name.
    * This method looks up Gravatar if avatar icon has not been configured in user settings.
    */
-  def avatar(userName: String, size: Int, tooltip: Boolean = false, mailAddress: String = "")(
-    implicit context: Context
+  def avatar(userName: String, size: Int, tooltip: Boolean = false, mailAddress: String = "")(implicit
+    context: Context
   ): Html =
     getAvatarImageHtml(userName, size, mailAddress, tooltip)
 
@@ -212,19 +228,19 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
     Html(
       message
         .replaceAll("\\[issue:([^\\s]+?)/([^\\s]+?)#((\\d+))\\]"){ m =>
-          val issue = getIssueFromCache(m.group(1), m.group(2), m.group(3))
-          if (issue.isDefined) {
-            s"""<a href="${context.path}/${m.group(1)}/${m.group(2)}/issues/${m.group(3)}" title="${issue.get.title}">${m.group(1)}/${m.group(2)}#${m.group(3)}</a>"""
-          } else {
-            s"${m.group(1)}/${m.group(2)}#${m.group(3)}"
+          getIssueFromCache(m.group(1), m.group(2), m.group(3)) match {
+            case Some(issue) =>
+              s"""<a href="${context.path}/${m.group(1)}/${m.group(2)}/issues/${m.group(3)}" title="${StringUtil.escapeHtml(issue.title)}">${m.group(1)}/${m.group(2)}#${m.group(3)}</a>"""
+            case None =>
+              s"${m.group(1)}/${m.group(2)}#${m.group(3)}"
           }
         }
         .replaceAll("\\[pullreq:([^\\s]+?)/([^\\s]+?)#((\\d+))\\]"){ m =>
-          val pullreq = getIssueFromCache(m.group(1), m.group(2), m.group(3))
-          if (pullreq.isDefined) {
-            s"""<a href="${context.path}/${m.group(1)}/${m.group(2)}/pull/${m.group(3)}" title="${pullreq.get.title}">${m.group(1)}/${m.group(2)}#${m.group(3)}</a>"""
-          } else {
-            s"${m.group(1)}/${m.group(2)}#${m.group(3)}"
+          getIssueFromCache(m.group(1), m.group(2), m.group(3)) match {
+            case Some(pullreq) =>
+              s"""<a href="${context.path}/${m.group(1)}/${m.group(2)}/pull/${m.group(3)}" title="${StringUtil.escapeHtml(pullreq.title)}">${m.group(1)}/${m.group(2)}#${m.group(3)}</a>"""
+            case None =>
+              s"${m.group(1)}/${m.group(2)}#${m.group(3)}"
           }
         }
         .replaceAll("\\[repo:([^\\s]+?)/([^\\s]+?)\\]") { m =>
@@ -276,7 +292,7 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   /**
    * URL encode except '/'.
    */
-  def encodeRefName(value: String): String = StringUtil.urlEncode(value).replace("%2F", "/")
+  def encodeRefName(value: String): String = StringUtil.encodeRefName(value)
 
   def urlEncode(value: String): String = StringUtil.urlEncode(value)
 
@@ -316,12 +332,30 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
    */
   def assets(path: String)(implicit context: Context): String = s"${context.path}/assets${path}?${hashQuery}"
 
+  def displayUserName(userName: String, mailAddress: String = "")(implicit context: Context): String = {
+    val displayName = if (!context.settings.showFullName) {
+      userName
+    } else {
+      if (mailAddress.isEmpty) {
+        getAccountByUserNameFromCache(userName).map(_.fullName).getOrElse(userName)
+      } else {
+        getAccountByMailAddressFromCache(mailAddress).map(_.fullName).getOrElse(userName)
+      }
+    }
+    if (userName == displayName) {
+      userName
+    } else {
+      s"$userName ($displayName)"
+    }
+  }
+
+
   /**
    * Generates the text link to the account page.
    * If user does not exist or disabled, this method returns user name as text without link.
    */
   def user(userName: String, mailAddress: String = "", styleClass: String = "")(implicit context: Context): Html =
-    userWithContent(userName, mailAddress, styleClass)(Html(StringUtil.escapeHtml(userName)))
+    userWithContent(userName, mailAddress, styleClass)(Html(StringUtil.escapeHtml(displayUserName(userName, mailAddress))))
 
   /**
    * Generates the avatar link to the account page.
@@ -336,7 +370,7 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   )(implicit context: Context): Html = {
 
     val avatarHtml = avatar(userName, size, tooltip, mailAddress)
-    val contentHtml = if (label == true) Html(avatarHtml.body + " " + userName) else avatarHtml
+    val contentHtml = if (label) Html(avatarHtml.body + " " + userName) else avatarHtml
 
     userWithContent(userName, mailAddress)(contentHtml)
   }
@@ -446,14 +480,14 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
               }
               result.append(c)
             }
-            case '>' if tag == true => {
+            case '>' if tag => {
               tag = false
               result.append(c)
             }
             case _ if tag == false => {
               text.append(c)
             }
-            case _ if tag == true => {
+            case _ if tag => {
               result.append(c)
             }
           }
@@ -509,6 +543,18 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
     sb.append("</table>")
 
     Html(sb.toString())
+  }
+
+  /**
+    * Utility method to enable checkboxes
+    */
+  def enableCheckbox(html: Html, enable: Boolean): Html = {
+    if (enable) {
+      val re = "(<input\\s+[^<>]*type=\"checkbox\"\\s+[^<>]*)\\s+disabled[^<>]*>".r
+      Html(re.replaceAllIn(html.toString(), "$1>"))
+    } else {
+      html
+    }
   }
 
   case class CommentDiffLine(newLine: Option[String], oldLine: Option[String], `type`: String, text: String)

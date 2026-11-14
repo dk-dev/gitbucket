@@ -7,6 +7,7 @@ trait AccountComponent { self: Profile =>
   lazy val Accounts = TableQuery[Accounts]
 
   class Accounts(tag: Tag) extends Table[Account](tag, "ACCOUNT") {
+    val accountId = column[Long]("ACCOUNT_ID", O AutoInc)
     val userName = column[String]("USER_NAME", O PrimaryKey)
     val fullName = column[String]("FULL_NAME")
     val mailAddress = column[String]("MAIL_ADDRESS")
@@ -22,6 +23,7 @@ trait AccountComponent { self: Profile =>
     val description = column[String]("DESCRIPTION")
     def * =
       (
+        accountId,
         userName,
         fullName,
         mailAddress,
@@ -35,11 +37,12 @@ trait AccountComponent { self: Profile =>
         groupAccount,
         removed,
         description.?
-      ).<>(Account.tupled, Account.unapply)
+      ).mapTo[Account]
   }
 }
 
 case class Account(
+  accountId: Long = 0L,
   userName: String,
   fullName: String,
   mailAddress: String,

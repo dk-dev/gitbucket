@@ -2,6 +2,9 @@
 *.log
 .ensime
 .ensime_cache
+.DS_Store
+.java-version
+.tmp
 
 # sbt specific
 dist/*
@@ -11,6 +14,8 @@ src_managed/
 project/boot/
 project/plugins/project/
 .bsp/
+.jvmopts
+.sbtopts
 
 # Scala-IDE specific
 .scala_dependencies

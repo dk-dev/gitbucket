@@ -1,0 +1,92 @@
+@()(implicit context: gitbucket.core.controller.Context)
+      <nav class="navbar navbar-default" style="margin-bottom: 0px; min-height: auto; border-radius: 0px;">
+        <div class="collapse navbar-collapse">
+          <ul class="nav navbar-nav">
+            <li>
+              <div class="btn-group" data-toggle="buttons-radio">
+                <input type="button" id="btn-code" class="btn btn-default btn-sm active navbar-btn" value="Code">
+                <input type="button" id="btn-preview" class="btn btn-default btn-sm navbar-btn" value="Preview">
+              </div>
+            </li>
+          </ul>
+          <ul class="nav navbar-nav" style="margin-left: 8px;">
+            <li>
+              <div class="btn-group border" id="markdown-toolbar" style="display: none;">
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-bold" title="Bold"><i class="fa fa-bold"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-italic" title="Italic"><i class="fa fa-italic"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-code" title="Code"><i class="fa fa-code"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-link" title="Link"><i class="fa fa-link"></i></button>
+
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-heading" title="Heading" style="margin-left: 4px;"><i class="fa fa-header"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-quote" title="Quote"><i class="fa fa-quote-right"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-list-ul" title="Unordered List"><i class="fa fa-list-ul"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-list-ol" title="Ordered List"><i class="fa fa-list-ol"></i></button>
+                <button type="button" class="btn btn-default navbar-btn btn-sm" id="markdown-task" title="Task List"><i class="fa  fa-check-square-o"></i></button>
+              </div>
+            </li>
+          </ul>
+          <ul class="nav navbar-nav navbar-right">
+            <li>
+              <select id="aceKeyboardSelect" class="form-control navbar-form input-sm" aria-label="Keyboard" style="margin-right: 4px;">
+                <optgroup label="Keyboard">
+                  <option value="">Default</option>
+                  <option value="ace/keyboard/emacs">Emacs</option>
+                  <option value="ace/keyboard/sublime">Sublime</option>
+                  <option value="ace/keyboard/vim">Vim</option>
+                  <option value="ace/keyboard/vscode">VSCode</option>
+                </optgroup>
+              </select>
+            </li>
+            <li>
+              <select id="theme" class="form-control navbar-form input-sm" aria-label="Theme" style="margin-right: 4px;">
+                <optgroup label="Editor Theme">
+                  <option value="ambiance">Ambiance</option>
+                  <option value="chaos">Chaos</option>
+                  <option value="chrome">Chrome</option>
+                  <option value="clouds">Clouds</option>
+                  <option value="clouds_midnight">Clouds Midnight</option>
+                  <option value="cobalt">Cobalt</option>
+                  <option value="crimson_editor">Crimson</option>
+                  <option value="dawn">Dawn</option>
+                  <option value="dracula">Dracula</option>
+                  <option value="dreamweaver">Dreamweaver</option>
+                  <option value="eclipse">Eclipse</option>
+                  <option value="github">GitHub</option>
+                  <option value="gob">Gob</option>
+                  <option value="gruvbox">Gruvbox</option>
+                  <option value="idle_fingers">Idle Fingers</option>
+                  <option value="iplastic">Iplastic</option>
+                  <option value="katzenmilch">Katzenmilch</option>
+                  <option value="kr_theme">Kr</option>
+                  <option value="kuroir">Kuroir</option>
+                  <option value="merbivore">Merbivore</option>
+                  <option value="mono_industrial">Mono Industrial</option>
+                  <option selected value="monokai">Monokai</option>
+                  <option value="nord_dark">Nord Dark</option>
+                  <option value="pastel_on_dark">Pastel on Dark</option>
+                  <option value="solarized_dark">Solarized Dark</option>
+                  <option value="solarized_light">Solarized Light</option>
+                  <option value="sqlserver">Sqlserver</option>
+                  <option value="terminal">Terminal</option>
+                  <option value="textmate">Textmate</option>
+                  <option value="tomorrow">Tomorrow</option>
+                  <option value="tomorrow_night">Tomorrow Night</option>
+                  <option value="tomorrow_night_bright">Tomorrow Night Bright</option>
+                  <option value="tomorrow_night_eighties">Tomorrow Night Eighties</option>
+                  <option value="twilight">Twilight</option>
+                  <option value="vibrant_ink">Vibrant Ink</option>
+                  <option value="xcode">Xcode</option>
+                </optgroup>
+              </select>
+            </li>
+            <li>
+              <select id="wrap" class="form-control navbar-form input-sm" aria-label="Wrap" style="margin-right: 15px;">
+                <optgroup label="Line Wrap Mode">
+                  <option value="false">No wrap</option>
+                  <option value="true">Soft wrap</option>
+                </optgroup>
+              </select>
+            </li>
+          </ul>
+        </div>
+      </nav>

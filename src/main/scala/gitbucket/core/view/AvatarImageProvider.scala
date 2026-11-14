@@ -18,8 +18,10 @@ trait AvatarImageProvider { self: RequestCache =>
     val src = if (mailAddress.isEmpty) {
       // by user name
       getAccountByUserNameFromCache(userName).map { account =>
-        if (account.image.isEmpty && context.settings.gravatar) {
-          s"""https://www.gravatar.com/avatar/${StringUtil.md5(account.mailAddress.toLowerCase)}?s=${size}&d=retro&r=g"""
+        if (account.image.isEmpty && context.settings.basicBehavior.gravatar) {
+          s"""https://www.gravatar.com/avatar/${StringUtil.md5(
+              account.mailAddress.toLowerCase
+            )}?s=${size}&d=retro&r=g"""
         } else {
           s"""${context.path}/${account.userName}/_avatar?${helpers.hashDate(account.updatedDate)}"""
         }
@@ -29,13 +31,15 @@ trait AvatarImageProvider { self: RequestCache =>
     } else {
       // by mail address
       getAccountByMailAddressFromCache(mailAddress).map { account =>
-        if (account.image.isEmpty && context.settings.gravatar) {
-          s"""https://www.gravatar.com/avatar/${StringUtil.md5(account.mailAddress.toLowerCase)}?s=${size}&d=retro&r=g"""
+        if (account.image.isEmpty && context.settings.basicBehavior.gravatar) {
+          s"""https://www.gravatar.com/avatar/${StringUtil.md5(
+              account.mailAddress.toLowerCase
+            )}?s=${size}&d=retro&r=g"""
         } else {
           s"""${context.path}/${account.userName}/_avatar?${helpers.hashDate(account.updatedDate)}"""
         }
       } getOrElse {
-        if (context.settings.gravatar) {
+        if (context.settings.basicBehavior.gravatar) {
           s"""https://www.gravatar.com/avatar/${StringUtil.md5(mailAddress.toLowerCase)}?s=${size}&d=retro&r=g"""
         } else {
           s"""${context.path}/_unknown/_avatar"""
@@ -43,13 +47,28 @@ trait AvatarImageProvider { self: RequestCache =>
       }
     }
 
+    val displayName = if (!context.settings.showFullName) {
+      s"@$userName"
+    } else {
+      if (mailAddress.isEmpty) {
+        getAccountByUserNameFromCache(userName).map(_.fullName).getOrElse(s"@$userName")
+      } else {
+        getAccountByMailAddressFromCache(mailAddress).map(_.fullName).getOrElse(s"@$userName")
+      }
+    }
+
     if (tooltip) {
       Html(
-        s"""<img src="${src}" class="${if (size > 20) { "avatar" } else { "avatar-mini" }}" style="width: ${size}px; height: ${size}px;" data-toggle="tooltip" title="${userName}" alt="@${userName}" />"""
+        s"""<img src="${src}" class="${if (size > 20) { "avatar" }
+          else { "avatar-mini" }}" style="width: ${size}px; height: ${size}px;"
+           |     alt="${StringUtil.escapeHtml(displayName)}"
+           |     data-toggle="tooltip" title="${StringUtil.escapeHtml(displayName)}" />""".stripMargin
       )
     } else {
       Html(
-        s"""<img src="${src}" class="${if (size > 20) { "avatar" } else { "avatar-mini" }}" style="width: ${size}px; height: ${size}px;" alt="@${userName}" />"""
+        s"""<img src="${src}" class="${if (size > 20) { "avatar" }
+          else { "avatar-mini" }}" style="width: ${size}px; height: ${size}px;"
+           |     alt="${StringUtil.escapeHtml(displayName)}" />""".stripMargin
       )
     }
   }

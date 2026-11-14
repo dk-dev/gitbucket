@@ -9,8 +9,8 @@
       <div class="col-md-2 text-right">
         @defining(repository.tags.find(_.name == release.tag)){ tag =>
           @tag.map { tag =>
-            <a href="@helpers.url(repository)/tree/@helpers.encodeRefName(tag.name)" class="strong"><i class="octicon octicon-tag"></i>@tag.name</a><br>
-            <a href="@helpers.url(repository)/commit/@tag.id" class="monospace muted"><i class="octicon octicon-git-commit"></i>@tag.id.substring(0, 7)</a><br>
+            <a href="@helpers.url(repository)/tree/@helpers.urlEncode(tag.name)" class="strong"><i class="octicon octicon-tag"></i>@tag.name</a><br>
+            <a href="@helpers.url(repository)/commit/@tag.commitId" class="monospace muted"><i class="octicon octicon-git-commit"></i>@tag.commitId.substring(0, 7)</a><br>
             <span class="muted">@gitbucket.core.helper.html.datetimeago(tag.time)</span>
           }
         }
@@ -31,12 +31,14 @@
           <p class="muted">
            @helpers.avatarLink(release.author, 20) @helpers.user(release.author, styleClass="username") released this @gitbucket.core.helper.html.datetimeago(release.registeredDate)
           </p>
-          @helpers.markdown(
-            markdown           = release.content getOrElse "No description provided.",
-            repository         = repository,
+          @helpers.renderMarkup(
+            filePath           = List("temporary.md"),
+            fileContent        = release.content getOrElse "No description provided.",
             branch             = repository.repository.defaultBranch,
+            repository         = repository,
             enableWikiLink     = false,
             enableRefsLink     = true,
+            enableAnchor       = false,
             enableLineBreaks   = true,
             enableTaskList     = true,
             hasWritePermission = hasWritePermission

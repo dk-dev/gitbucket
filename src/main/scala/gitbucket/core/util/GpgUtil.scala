@@ -1,8 +1,7 @@
 package gitbucket.core.util
+
 import java.io.ByteArrayInputStream
-
 import scala.jdk.CollectionConverters._
-
 import gitbucket.core.model.Profile._
 import gitbucket.core.model.Profile.profile.blockingApi._
 import org.bouncycastle.bcpg.ArmoredInputStream
@@ -13,9 +12,8 @@ import org.bouncycastle.openpgp.operator.bc.BcPGPContentVerifierBuilderProvider
 object GpgUtil {
   def str2GpgKeyId(keyStr: String): Option[Long] = {
     val pubKeyOf = new BcPGPObjectFactory(new ArmoredInputStream(new ByteArrayInputStream(keyStr.getBytes)))
-    pubKeyOf.iterator().asScala.collectFirst {
-      case keyRing: PGPPublicKeyRing =>
-        keyRing.getPublicKey().getKeyID
+    pubKeyOf.iterator().asScala.collectFirst { case keyRing: PGPPublicKeyRing =>
+      keyRing.getPublicKey().getKeyID
     }
   }
 
@@ -34,11 +32,11 @@ object GpgUtil {
   }
 
   def verifySign(signInfo: JGitUtil.GpgSignInfo)(implicit s: Session): Option[JGitUtil.GpgVerifyInfo] = {
-    new BcPGPObjectFactory(new ArmoredInputStream(new ByteArrayInputStream(signInfo.signArmored)))
-      .iterator()
-      .asScala
-      .flatMap {
-        case signList: PGPSignatureList =>
+    try {
+      new BcPGPObjectFactory(new ArmoredInputStream(new ByteArrayInputStream(signInfo.signArmored)))
+        .iterator()
+        .asScala
+        .flatMap { case signList: PGPSignatureList =>
           signList
             .iterator()
             .asScala
@@ -54,9 +52,12 @@ object GpgUtil {
                     JGitUtil.GpgVerifyInfo(pubKey.getUserIDs.next, pubKey.getKeyID.toHexString.toUpperCase)
                 }
             }
+        }
+        .toList
+        .headOption
+    } catch {
+      case _: Throwable => None
+    }
 
-      }
-      .toList
-      .headOption
   }
 }

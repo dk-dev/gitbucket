@@ -8,29 +8,18 @@
     <div class="pull-right">
       @if(page.isDefined){
         <a class="btn btn-default" href="@helpers.url(repository)/wiki/@helpers.urlEncode(pageName)/_history">Page History</a>
-        <a class="btn btn-danger" href="@helpers.url(repository)/wiki/@helpers.urlEncode(pageName)/_delete" id="delete">Delete Page</a>
+        <a data-method="post" class="btn btn-danger" href="@helpers.url(repository)/wiki/@helpers.urlEncode(pageName)/_delete" id="delete">Delete Page</a>
       }
     </div>
-    <h1 class="wiki-title"><span class="muted">Editing</span> @if(pageName.isEmpty){New Page} else {@pageName}</h1>
+    <h1 class="body-title"><span class="muted">Editing</span> @if(pageName.isEmpty){New Page} else {@pageName}</h1>
     <form action="@helpers.url(repository)/wiki/@if(page.isEmpty){_new} else {_edit}" method="POST" validate="true" autocomplete="off">
       <span id="error-pageName" class="error"></span>
       <input type="text" name="pageName" value="@pageName" class="form-control" style="font-weight: bold; margin-bottom: 10px;" placeholder="Input a page name." aria-label="Page name"/>
+      @gitbucket.core.helper.html.acenavbar()
       <div class="muted attachable">
-        @gitbucket.core.helper.html.preview(
-          repository         = repository,
-          content            = page.map(_.content).getOrElse(""),
-          enableWikiLink     = true,
-          enableRefsLink     = false,
-          enableLineBreaks   = false,
-          enableTaskList     = false,
-          hasWritePermission = false,
-          completionContext  = "wiki",
-          style              = "height: 400px;",
-          styleClass         = "monospace",
-          placeholder        = "",
-          ariaLabel          = "Page content",
-          uid                = 1
-        )
+        <div id="editor" style="width: 100%; height: 600px;"></div>
+        <div class="clickable">Attach images or documents by dragging &amp; dropping, or selecting them.</div>
+        <div id="preview" style="width: 100%; display: none;"></div>
       </div>
       <div class="form-group">
         <label for="message">Edit Message</label>
@@ -39,45 +28,44 @@
       <div class="form-group pull-right">
         <input type="hidden" name="currentPageName" value="@pageName"/>
         <input type="hidden" name="id" value="@page.map(_.id)"/>
-        <input type="submit" value="Save" class="btn btn-success">
+        <input type="submit" id="commitButton" value="Save" class="btn btn-success">
+        <input type="hidden" id="content" name="content" value=""/>
+        <input type="hidden" id="initial" value='@page.map(_.content)'/>
       </div>
     </form>
+    <script src='@helpers.assets("/vendors/ace/ace.js")' type="text/javascript" charset="utf-8"></script>
+    <script src='@helpers.assets("/vendors/ace/ext-modelist.js")' type="text/javascript" charset="utf-8"></script>
+    <script src='@helpers.assets("/vendors/ace/ext-language_tools.js")' type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript" src='@helpers.assets("/vendors/jsdifflib/difflib.js")'></script>
+    <link href='@helpers.assets("/vendors/jsdifflib/diffview.css")' type="text/css" rel="stylesheet" />
+      @gitbucket.core.helper.html.completion(
+        repository        = repository,
+        completionContext = "wiki",
+        generateScript    = false 
+      )
+    <script>
+      const gitbucket = {
+        editor: null,
+        enableWikiLink: true,
+        pluginAssets: "@context.path/plugin-assets/",
+        protected: false,
+        previewTemplate: '<img src="@helpers.assets("/common/images/indicator.gif")"> Previewing...',
+        previewUrl: '@helpers.url(repository)/_preview',
+        uploadUrl: '@context.path/upload/wiki/@repository.owner/@repository.name',
+        maxFilesize: @{ context.settings.upload.maxFileSize / 1024 / 1024 },
+        timeout: @{ context.settings.upload.timeout },
+        isRenderableUrl: "@context.baseUrl/_is_renderable?filename=",
+        tabSize: 8,
+        newLineMode: "auto",
+        useSoftTabs: false,
+        getFileName: function () {
+          return '@page.map(_.name).getOrElse("temporary.md")';
+        },
+        getFilePath: function () {
+          return '@page.map(_.name).getOrElse("temporary.md")';
+        },
+      };
+    </script>
+    <script src='@helpers.assets("/common/js/editor.js")' type="text/javascript" charset="utf-8"></script>
   }
 }
-<script>
-$(function(){
-  try {
-    $('#content1').dropzone({
-      url: '@context.path/upload/wiki/@repository.owner/@repository.name',
-      maxFilesize: @{context.settings.upload.maxFileSize / 1024 / 1024},
-      timeout: @{context.settings.upload.timeout},
-      clickable: false,
-      previewTemplate: "<div class=\"dz-preview\">\n  <div class=\"dz-progress\"><span class=\"dz-upload\" data-dz-uploadprogress>Uploading your files...</span></div>\n  <div class=\"dz-error-message\"><span data-dz-errormessage></span></div>\n</div>",
-      success: function(file, id) {
-        var attachFile = (file.type.match(/image\/.*/) ? '\n![' + file.name.split('.')[0] : '\n[' + file.name) + '](' + file.name + ')';
-        $('#content1').val($('#content1').val() + attachFile);
-        $(file.previewElement).prevAll('div.dz-preview').addBack().remove();
-      }
-    });
-    $('.clickable').dropzone({
-      url: '@context.path/upload/wiki/@repository.owner/@repository.name',
-      maxFilesize: @{context.settings.upload.maxFileSize / 1024 / 1024},
-      timeout: @{context.settings.upload.timeout},
-      previewTemplate: "<div class=\"dz-preview\">\n  <div class=\"dz-progress\"><span class=\"dz-upload\" data-dz-uploadprogress>Uploading your files...</span></div>\n  <div class=\"dz-error-message\"><span data-dz-errormessage></span></div>\n</div>",
-      success: function(file, id) {
-        var attachFile = (file.type.match(/image\/.*/) ? '\n![' + file.name.split('.')[0] : '\n[' + file.name) + '](' + file.name + ')';
-        $('#content1').val($('#content1').val() + attachFile);
-        $(file.previewElement).prevAll('div.dz-preview').addBack().remove();
-      }
-    });
-  } catch(e) {
-    if (e.message !== "Dropzone already attached.") {
-      throw e;
-    }
-  }
-
-  $('#delete').click(function(){
-    return confirm('Are you sure you want to delete this page?');
-  });
-});
-</script>

@@ -24,6 +24,8 @@ trait RepositoryComponent extends TemplateComponent { self: Profile =>
     val allowFork = column[Boolean]("ALLOW_FORK")
     val mergeOptions = column[String]("MERGE_OPTIONS")
     val defaultMergeOption = column[String]("DEFAULT_MERGE_OPTION")
+    val safeMode = column[Boolean]("SAFE_MODE")
+    val repositoryId = column[Long]("REPOSITORY_ID", O AutoInc)
 
     def * =
       (
@@ -41,26 +43,37 @@ trait RepositoryComponent extends TemplateComponent { self: Profile =>
           parentUserName.?,
           parentRepositoryName.?
         ),
-        (issuesOption, externalIssuesUrl.?, wikiOption, externalWikiUrl.?, allowFork, mergeOptions, defaultMergeOption)
+        (
+          issuesOption,
+          externalIssuesUrl.?,
+          wikiOption,
+          externalWikiUrl.?,
+          allowFork,
+          mergeOptions,
+          defaultMergeOption,
+          safeMode
+        ),
+        repositoryId
       ).shaped.<>(
-        {
-          case (repository, options) =>
-            Repository(
-              repository._1,
-              repository._2,
-              repository._3,
-              repository._4,
-              repository._5,
-              repository._6,
-              repository._7,
-              repository._8,
-              repository._9,
-              repository._10,
-              repository._11,
-              repository._12,
-              RepositoryOptions.tupled.apply(options)
-            )
-        }, { (r: Repository) =>
+        { case (repository, options, repositoryId) =>
+          Repository(
+            repository._1,
+            repository._2,
+            repository._3,
+            repository._4,
+            repository._5,
+            repository._6,
+            repository._7,
+            repository._8,
+            repository._9,
+            repository._10,
+            repository._11,
+            repository._12,
+            RepositoryOptions.apply.tupled.apply(options),
+            repositoryId
+          )
+        },
+        { (r: Repository) =>
           Some(
             (
               (
@@ -77,9 +90,8 @@ trait RepositoryComponent extends TemplateComponent { self: Profile =>
                 r.parentUserName,
                 r.parentRepositoryName
               ),
-              (
-                RepositoryOptions.unapply(r.options).get
-              )
+              RepositoryOptions.unapply(r.options).get,
+              r.repositoryId
             )
           )
         }
@@ -102,7 +114,8 @@ case class Repository(
   originRepositoryName: Option[String],
   parentUserName: Option[String],
   parentRepositoryName: Option[String],
-  options: RepositoryOptions
+  options: RepositoryOptions,
+  repositoryId: Long = 0L
 )
 
 case class RepositoryOptions(
@@ -112,5 +125,6 @@ case class RepositoryOptions(
   externalWikiUrl: Option[String],
   allowFork: Boolean,
   mergeOptions: String,
-  defaultMergeOption: String
+  defaultMergeOption: String,
+  safeMode: Boolean
 )

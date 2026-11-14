@@ -30,7 +30,7 @@ trait CommitStatusComponent extends TemplateComponent { self: Profile =>
         creator,
         registeredDate,
         updatedDate
-      ).<>((CommitStatus.apply _).tupled, CommitStatus.unapply)
+      ).mapTo[CommitStatus]
     def byPrimaryKey(id: Int) = commitStatusId === id.bind
   }
 }
@@ -78,7 +78,7 @@ object CommitState {
 
   val values: Vector[CommitState] = Vector(PENDING, SUCCESS, ERROR, FAILURE)
 
-  private val map: Map[String, CommitState] = values.map(enum => enum.name -> enum).toMap
+  private val map: Map[String, CommitState] = values.map(e => e.name -> e).toMap
 
   def apply(name: String): CommitState = map(name)
 

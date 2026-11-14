@@ -40,7 +40,10 @@
       <div id="branchCtrlWrapper" style="display:inline;">
       @gitbucket.core.helper.html.branchcontrol(branch, repository, hasWritePermission){
         @repository.branchList.map { x =>
-          <li><a href="@helpers.url(repository)/blob/@helpers.encodeRefName((x :: pathList).mkString("/"))">@gitbucket.core.helper.html.checkicon(x == branch) @x</a></li>
+          <li class="branch-control-item-branch"><a href="@helpers.url(repository)/blob/@helpers.encodeRefName((x :: pathList).mkString("/"))">@gitbucket.core.helper.html.checkicon(x == branch) @x</a></li>
+        }
+        @repository.tags.map { x =>
+          <li class="branch-control-item-tag"><a href="@helpers.url(repository)/blob/@helpers.encodeRefName((x.name :: pathList).mkString("/"))">@gitbucket.core.helper.html.checkicon(x.name == branch) @x.name</a></li>
         }
       }
       </div>
@@ -80,7 +83,18 @@
     @defining(helpers.isRenderable(pathList.last)){ isRenderable =>
       @if(!isBlame && isRenderable) {
         <div class="box-content-bottom @if(content.viewType == "text"){ markdown-body } " style="padding-left: 20px; padding-right: 20px;">
-          @helpers.renderMarkup(pathList, content.content.getOrElse(""), branch, repository, false, false, true)
+          @helpers.renderMarkup(
+            filePath = pathList,
+            fileContent = content.content.getOrElse(""),
+            branch = branch,
+            repository = repository,
+            enableWikiLink = false,
+            enableRefsLink = false,
+            enableAnchor = true,
+            enableLineBreaks = false,
+            enableTaskList = true,
+            hasWritePermission = hasWritePermission
+          )
         </div>
       }else{
         @if(content.viewType == "text"){
@@ -244,7 +258,7 @@ function updateHighlighting() {
   const isDark = @{highlighterTheme.contains("dark").toString};
   if (hash.match(/#L\d+(-L\d+)?/)) {
     if (isDark) {
-      $('li.highlight').removeClass('highlight-dark');
+      $('li.highlight-dark').removeClass('highlight-dark');
     } else {
       $('li.highlight').removeClass('highlight');
     }

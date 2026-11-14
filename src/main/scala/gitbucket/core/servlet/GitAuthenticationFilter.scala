@@ -23,9 +23,9 @@ class GitAuthenticationFilter extends Filter with RepositoryService with Account
 
   private val logger = LoggerFactory.getLogger(classOf[GitAuthenticationFilter])
 
-  def init(config: FilterConfig) = {}
+  override def init(config: FilterConfig) = {}
 
-  def destroy(): Unit = {}
+  override def destroy(): Unit = {}
 
   def doFilter(req: ServletRequest, res: ServletResponse, chain: FilterChain): Unit = {
     val request = req.asInstanceOf[HttpServletRequest]
@@ -43,10 +43,9 @@ class GitAuthenticationFilter extends Filter with RepositoryService with Account
     try {
       PluginRegistry()
         .getRepositoryRouting(request.gitRepositoryPath)
-        .map {
-          case GitRepositoryRouting(_, _, filter) =>
-            // served by plug-ins
-            pluginRepository(request, wrappedResponse, chain, settings, isUpdating, filter)
+        .map { case GitRepositoryRouting(_, _, filter) =>
+          // served by plug-ins
+          pluginRepository(request, wrappedResponse, chain, settings, isUpdating, filter)
 
         }
         .getOrElse {
@@ -98,29 +97,30 @@ class GitAuthenticationFilter extends Filter with RepositoryService with Account
         Database() withSession { implicit session =>
           getRepository(repositoryOwner, repositoryName.replaceFirst("(\\.wiki)?\\.git$", "")) match {
             case Some(repository) => {
-              val execute = if (!isUpdating && !repository.repository.isPrivate && settings.allowAnonymousAccess) {
-                // Authentication is not required
-                true
-              } else {
-                // Authentication is required
-                val passed = for {
-                  authorizationHeader <- Option(request.getHeader("Authorization"))
-                  account <- authenticateByHeader(authorizationHeader, settings)
-                } yield
-                  if (isUpdating) {
-                    if (hasDeveloperRole(repository.owner, repository.name, Some(account))) {
-                      request.setAttribute(Keys.Request.UserName, account.userName)
-                      request.setAttribute(Keys.Request.RepositoryLockKey, s"${repository.owner}/${repository.name}")
-                      true
-                    } else false
-                  } else if (repository.repository.isPrivate) {
-                    if (hasGuestRole(repository.owner, repository.name, Some(account))) {
-                      request.setAttribute(Keys.Request.UserName, account.userName)
-                      true
-                    } else false
-                  } else true
-                passed.getOrElse(false)
-              }
+              val execute =
+                if (!isUpdating && !repository.repository.isPrivate && settings.basicBehavior.allowAnonymousAccess) {
+                  // Authentication is not required
+                  true
+                } else {
+                  // Authentication is required
+                  val passed = for {
+                    authorizationHeader <- Option(request.getHeader("Authorization"))
+                    account <- authenticateByHeader(authorizationHeader, settings)
+                  } yield
+                    if (isUpdating) {
+                      if (hasDeveloperRole(repository.owner, repository.name, Some(account))) {
+                        request.setAttribute(Keys.Request.UserName, account.userName)
+                        request.setAttribute(Keys.Request.RepositoryLockKey, s"${repository.owner}/${repository.name}")
+                        true
+                      } else false
+                    } else if (repository.repository.isPrivate) {
+                      if (hasGuestRole(repository.owner, repository.name, Some(account))) {
+                        request.setAttribute(Keys.Request.UserName, account.userName)
+                        true
+                      } else false
+                    } else true
+                  passed.getOrElse(false)
+                }
 
               if (execute) { () =>
                 chain.doFilter(request, response)
@@ -129,19 +129,17 @@ class GitAuthenticationFilter extends Filter with RepositoryService with Account
               }
             }
             case None =>
-              () =>
-                {
-                  logger.debug(s"Repository ${repositoryOwner}/${repositoryName} is not found.")
-                  response.sendError(HttpServletResponse.SC_NOT_FOUND)
-                }
+              () => {
+                logger.debug(s"Repository ${repositoryOwner}/${repositoryName} is not found.")
+                response.sendError(HttpServletResponse.SC_NOT_FOUND)
+              }
           }
         }
       case _ =>
-        () =>
-          {
-            logger.debug(s"Not enough path arguments: ${request.paths}")
-            response.sendError(HttpServletResponse.SC_NOT_FOUND)
-          }
+        () => {
+          logger.debug(s"Not enough path arguments: ${request.paths.mkString(", ")}")
+          response.sendError(HttpServletResponse.SC_NOT_FOUND)
+        }
     }
 
     action()
@@ -158,8 +156,8 @@ class GitAuthenticationFilter extends Filter with RepositoryService with Account
    * @param s database session
    * @return an account or none
    */
-  private def authenticateByHeader(authorizationHeader: String, settings: SystemSettings)(
-    implicit s: Session
+  private def authenticateByHeader(authorizationHeader: String, settings: SystemSettings)(implicit
+    s: Session
   ): Option[Account] = {
     val Array(username, password) = AuthUtil.decodeAuthHeader(authorizationHeader).split(":", 2)
     authenticate(settings, username, password).orElse {

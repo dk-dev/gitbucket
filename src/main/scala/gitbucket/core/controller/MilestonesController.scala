@@ -9,11 +9,11 @@ import gitbucket.core.service.{
   MilestonesService,
   RepositoryService
 }
-import gitbucket.core.util.Implicits._
+import gitbucket.core.util.Implicits.*
 import gitbucket.core.util.{ReferrerAuthenticator, WritableUsersAuthenticator}
-import gitbucket.core.util.SyntaxSugars._
+import gitbucket.core.util.SyntaxSugars.*
 import gitbucket.core.view.helpers.{getAssignableUserNames, getLabels, getPriorities, searchIssue}
-import org.scalatra.forms._
+import org.scalatra.forms.*
 import org.scalatra.i18n.Messages
 
 class MilestonesController
@@ -26,15 +26,12 @@ class MilestonesController
     with WritableUsersAuthenticator
 
 trait MilestonesControllerBase extends ControllerBase {
-  self: MilestonesService
-    with RepositoryService
-    with CommitStatusService
-    with ReferrerAuthenticator
-    with WritableUsersAuthenticator =>
+  self: MilestonesService & RepositoryService & CommitStatusService & ReferrerAuthenticator &
+    WritableUsersAuthenticator =>
 
-  case class MilestoneForm(title: String, description: Option[String], dueDate: Option[java.util.Date])
+  private case class MilestoneForm(title: String, description: Option[String], dueDate: Option[java.util.Date])
 
-  val milestoneForm = mapping(
+  private val milestoneForm = mapping(
     "title" -> trim(label("Title", text(required, maxlength(100), uniqueMilestone))),
     "description" -> trim(label("Description", optional(text()))),
     "dueDate" -> trim(label("Due Date", optional(date())))
@@ -88,7 +85,7 @@ trait MilestonesControllerBase extends ControllerBase {
     html.edit(None, _)
   })
 
-  post("/:owner/:repository/issues/milestones/new", milestoneForm)(writableUsersOnly { (form, repository) =>
+  post("/:owner/:repository/issues/milestones/new", milestoneForm)(writableUsersOnlyWithForm { (form, repository) =>
     createMilestone(repository.owner, repository.name, form.title, form.description, form.dueDate)
     redirect(s"/${repository.owner}/${repository.name}/issues/milestones")
   })
@@ -99,7 +96,7 @@ trait MilestonesControllerBase extends ControllerBase {
     } getOrElse NotFound()
   })
 
-  post("/:owner/:repository/issues/milestones/:milestoneId/edit", milestoneForm)(writableUsersOnly {
+  post("/:owner/:repository/issues/milestones/:milestoneId/edit", milestoneForm)(writableUsersOnlyWithForm {
     (form, repository) =>
       params("milestoneId").toIntOpt.flatMap { milestoneId =>
         getMilestone(repository.owner, repository.name, milestoneId).map { milestone =>
@@ -127,7 +124,7 @@ trait MilestonesControllerBase extends ControllerBase {
     } getOrElse NotFound()
   })
 
-  get("/:owner/:repository/issues/milestones/:milestoneId/delete")(writableUsersOnly { repository =>
+  post("/:owner/:repository/issues/milestones/:milestoneId/delete")(writableUsersOnly { repository =>
     params("milestoneId").toIntOpt.flatMap { milestoneId =>
       getMilestone(repository.owner, repository.name, milestoneId).map { milestone =>
         deleteMilestone(repository.owner, repository.name, milestone.milestoneId)

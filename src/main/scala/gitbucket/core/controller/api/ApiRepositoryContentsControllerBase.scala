@@ -1,9 +1,9 @@
 package gitbucket.core.controller.api
-import gitbucket.core.api.{ApiContents, ApiError, CreateAFile, JsonFormat}
+import gitbucket.core.api.{ApiCommit, ApiContents, ApiError, CreateAFile, JsonFormat}
 import gitbucket.core.controller.ControllerBase
 import gitbucket.core.service.{RepositoryCommitFileService, RepositoryService}
 import gitbucket.core.util.Directory.getRepositoryDir
-import gitbucket.core.util.JGitUtil.{FileInfo, getContentFromId, getFileList}
+import gitbucket.core.util.JGitUtil.{CommitInfo, FileInfo, getContentFromId, getFileList}
 import gitbucket.core.util._
 import gitbucket.core.view.helpers.{isRenderable, renderMarkup}
 import gitbucket.core.util.Implicits._
@@ -12,30 +12,29 @@ import org.eclipse.jgit.api.Git
 import scala.util.Using
 
 trait ApiRepositoryContentsControllerBase extends ControllerBase {
-  self: ReferrerAuthenticator with WritableUsersAuthenticator with RepositoryCommitFileService =>
+  self: ReferrerAuthenticator & WritableUsersAuthenticator & RepositoryCommitFileService =>
 
   /**
    * i. Get a repository README
    * https://docs.github.com/en/rest/reference/repos#get-a-repository-readme
    */
   get("/api/v3/repos/:owner/:repository/readme")(referrersOnly { repository =>
-    Using.resource(Git.open(getRepositoryDir(params("owner"), params("repository")))) {
-      git =>
-        val refStr = params.getOrElse("ref", repository.repository.defaultBranch)
-        val files = getFileList(git, refStr, ".", maxFiles = context.settings.repositoryViewer.maxFiles)
-        files // files should be sorted alphabetically.
-          .find { file =>
-            !file.isDirectory && RepositoryService.readmeFiles.contains(file.name.toLowerCase)
-          } match {
-          case Some(x) => getContents(repository = repository, path = x.name, refStr = refStr, ignoreCase = true)
-          case _       => NotFound()
-        }
+    Using.resource(Git.open(getRepositoryDir(params("owner"), params("repository")))) { git =>
+      val refStr = params.getOrElse("ref", repository.repository.defaultBranch)
+      val files = getFileList(git, refStr, ".", maxFiles = context.settings.repositoryViewer.maxFiles)
+      files // files should be sorted alphabetically.
+        .find { file =>
+          !file.isDirectory && RepositoryService.readmeFiles.contains(file.name.toLowerCase)
+        } match {
+        case Some(x) => getContents(repository = repository, path = x.name, refStr = refStr, ignoreCase = true)
+        case _       => NotFound()
+      }
     }
   })
 
   /**
    * ii. Get contents
-   * https://developer.github.com/v3/repos/contents/#get-contents
+   * https://docs.github.com/en/rest/reference/repos#get-repository-content
    */
   get("/api/v3/repos/:owner/:repository/contents")(referrersOnly { repository =>
     getContents(repository, ".", params.getOrElse("ref", repository.repository.defaultBranch))
@@ -43,11 +42,27 @@ trait ApiRepositoryContentsControllerBase extends ControllerBase {
 
   /**
    * ii. Get contents
-   * https://developer.github.com/v3/repos/contents/#get-contents
+   * https://docs.github.com/en/rest/reference/repos#get-repository-content
    */
   get("/api/v3/repos/:owner/:repository/contents/*")(referrersOnly { repository =>
     getContents(repository, multiParams("splat").head, params.getOrElse("ref", repository.repository.defaultBranch))
   })
+
+  private def getFileInfo(git: Git, revision: String, pathStr: String, ignoreCase: Boolean): Option[FileInfo] = {
+    val (dirName, fileName) = pathStr.lastIndexOf('/') match {
+      case -1 =>
+        (".", pathStr)
+      case n =>
+        (pathStr.take(n), pathStr.drop(n + 1))
+    }
+    if (ignoreCase) {
+      getFileList(git, revision, dirName, maxFiles = context.settings.repositoryViewer.maxFiles)
+        .find(_.name.toLowerCase.equals(fileName.toLowerCase))
+    } else {
+      getFileList(git, revision, dirName, maxFiles = context.settings.repositoryViewer.maxFiles)
+        .find(_.name.equals(fileName))
+    }
+  }
 
   private def getContents(
     repository: RepositoryService.RepositoryInfo,
@@ -55,22 +70,6 @@ trait ApiRepositoryContentsControllerBase extends ControllerBase {
     refStr: String,
     ignoreCase: Boolean = false
   ) = {
-    def getFileInfo(git: Git, revision: String, pathStr: String, ignoreCase: Boolean): Option[FileInfo] = {
-      val (dirName, fileName) = pathStr.lastIndexOf('/') match {
-        case -1 =>
-          (".", pathStr)
-        case n =>
-          (pathStr.take(n), pathStr.drop(n + 1))
-      }
-      if (ignoreCase) {
-        getFileList(git, revision, dirName, maxFiles = context.settings.repositoryViewer.maxFiles)
-          .find(_.name.toLowerCase.equals(fileName.toLowerCase))
-      } else {
-        getFileList(git, revision, dirName, maxFiles = context.settings.repositoryViewer.maxFiles)
-          .find(_.name.equals(fileName))
-      }
-    }
-
     Using.resource(Git.open(getRepositoryDir(params("owner"), params("repository")))) { git =>
       val fileList = getFileList(git, refStr, path, maxFiles = context.settings.repositoryViewer.maxFiles)
       if (fileList.isEmpty) { // file or NotFound
@@ -91,7 +90,17 @@ trait ApiRepositoryContentsControllerBase extends ControllerBase {
                     path,
                     "\" id=\"file\">",
                     "<article>",
-                    renderMarkup(path.split("/").toList, new String(c), refStr, repository, false, false, true).body,
+                    renderMarkup(
+                      filePath = path.split("/").toList,
+                      fileContent = new String(c),
+                      branch = refStr,
+                      repository = repository,
+                      enableWikiLink = false,
+                      enableRefsLink = false,
+                      enableAnchor = false,
+                      enableLineBreaks = true,
+                      enableTaskList = true
+                    ).body,
                     "</article>",
                     "</div>"
                   ).mkString
@@ -126,62 +135,87 @@ trait ApiRepositoryContentsControllerBase extends ControllerBase {
       }
     }
   }
-  /*
+
+  /**
    * iii. Create a file or iv. Update a file
-   * https://developer.github.com/v3/repos/contents/#create-a-file
-   * https://developer.github.com/v3/repos/contents/#update-a-file
+   * https://docs.github.com/en/rest/reference/repos#create-or-update-file-contents
    * if sha is presented, update a file else create a file.
    * requested #2112
    */
-
   put("/api/v3/repos/:owner/:repository/contents/*")(writableUsersOnly { repository =>
-    context.withLoginAccount {
-      loginAccount =>
-        JsonFormat(for {
-          data <- extractFromJsonBody[CreateAFile]
-        } yield {
-          val branch = data.branch.getOrElse(repository.repository.defaultBranch)
-          val commit = Using.resource(Git.open(getRepositoryDir(repository.owner, repository.name))) { git =>
-            val revCommit = JGitUtil.getRevCommitFromId(git, git.getRepository.resolve(branch))
-            revCommit.name
+    context.withLoginAccount { loginAccount =>
+      JsonFormat(for {
+        data <- extractFromJsonBody[CreateAFile]
+      } yield {
+        val branch = data.branch.getOrElse(repository.repository.defaultBranch)
+        val commit = Using.resource(Git.open(getRepositoryDir(repository.owner, repository.name))) { git =>
+          val revCommit = JGitUtil.getRevCommitFromId(git, git.getRepository.resolve(branch))
+          revCommit.name
+        }
+        val fullPath = multiParams("splat").head
+        val paths = fullPath.split("/")
+        val path = paths.take(paths.size - 1).toList.mkString("/")
+        Using.resource(Git.open(getRepositoryDir(params("owner"), params("repository")))) { git =>
+          val fileInfo = getFileInfo(git, commit, fullPath, ignoreCase = false)
+
+          fileInfo match {
+            case Some(f) if !data.sha.contains(f.id.getName) =>
+              ApiError(
+                "The blob SHA is not matched.",
+                Some("https://docs.github.com/en/rest/reference/repos#create-or-update-file-contents")
+              )
+            case _ =>
+              commitFile(
+                repository,
+                branch,
+                path,
+                Some(paths.last),
+                data.sha.map(_ => paths.last),
+                StringUtil.base64Decode(data.content),
+                data.message,
+                commit,
+                loginAccount,
+                data.committer.map(_.name).getOrElse(loginAccount.fullName),
+                data.committer.map(_.email).getOrElse(loginAccount.mailAddress),
+                context.settings
+              ) match {
+                case Left(error) =>
+                  ApiError(s"Failed to commit a file: ${error}", None)
+                case Right((_, None)) =>
+                  ApiError("Failed to commit a file.", None)
+                case Right((commitId, Some(blobId))) =>
+                  Map(
+                    "content" -> ApiContents(
+                      "file",
+                      paths.last,
+                      path,
+                      blobId.name,
+                      Some(data.content),
+                      Some("base64")
+                    )(RepositoryName(repository)),
+                    "commit" -> ApiCommit(
+                      git,
+                      RepositoryName(repository),
+                      new CommitInfo(JGitUtil.getRevCommitFromId(git, commitId))
+                    )
+                  )
+              }
           }
-          val paths = multiParams("splat").head.split("/")
-          val path = paths.take(paths.size - 1).toList.mkString("/")
-          if (data.sha.isDefined && data.sha.get != commit) {
-            ApiError(
-              "The blob SHA is not matched.",
-              Some("https://developer.github.com/v3/repos/contents/#update-a-file")
-            )
-          } else {
-            val objectId = commitFile(
-              repository,
-              branch,
-              path,
-              Some(paths.last),
-              data.sha.map(_ => paths.last),
-              StringUtil.base64Decode(data.content),
-              data.message,
-              commit,
-              loginAccount,
-              data.committer.map(_.name).getOrElse(loginAccount.fullName),
-              data.committer.map(_.email).getOrElse(loginAccount.mailAddress),
-              context.settings
-            )
-            ApiContents("file", paths.last, path, objectId.name, None, None)(RepositoryName(repository))
-          }
-        })
+        }
+      })
     }
   })
 
   /*
    * v. Delete a file
-   * https://developer.github.com/v3/repos/contents/#delete-a-file
+   * https://docs.github.com/en/rest/reference/repos#delete-a-file
    * should be implemented
    */
 
   /*
- * vi. Get archive link
- * https://developer.github.com/v3/repos/contents/#get-archive-link
- */
+   * vi. Download a repository archive (tar/zip)
+   * https://docs.github.com/en/rest/reference/repos#download-a-repository-archive-tar
+   * https://docs.github.com/en/rest/reference/repos#download-a-repository-archive-zip
+   */
 
 }

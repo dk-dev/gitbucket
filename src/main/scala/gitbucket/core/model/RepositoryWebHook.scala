@@ -14,14 +14,13 @@ trait RepositoryWebHookComponent extends TemplateComponent { self: Profile =>
     val token = column[Option[String]]("TOKEN")
     val ctype = column[WebHookContentType]("CTYPE")
     def * =
-      (userName, repositoryName, hookId, url, ctype, token)
-        .<>((RepositoryWebHook.apply _).tupled, RepositoryWebHook.unapply)
+      (userName, repositoryName, hookId, url, ctype, token).mapTo[RepositoryWebHook]
 
     def byRepositoryUrl(owner: String, repository: String, url: String) =
       byRepository(owner, repository) && (this.url === url.bind)
 
-    def byId(id: Int) =
-      (this.hookId === id.bind)
+    def byRepositoryId(owner: String, repository: String, id: Int) =
+      byRepository(owner, repository) && (this.hookId === id.bind)
   }
 }
 

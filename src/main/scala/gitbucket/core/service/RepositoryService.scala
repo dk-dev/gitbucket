@@ -2,7 +2,6 @@ package gitbucket.core.service
 
 import gitbucket.core.controller.Context
 import gitbucket.core.util._
-import gitbucket.core.util.SyntaxSugars._
 import gitbucket.core.model.{CommitComments => _, Session => _, _}
 import gitbucket.core.model.Profile._
 import gitbucket.core.model.Profile.profile.blockingApi._
@@ -13,6 +12,7 @@ import gitbucket.core.util.JGitUtil.FileInfo
 import org.apache.commons.io.FileUtils
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.{Repository => _}
+
 import scala.util.Using
 
 trait RepositoryService {
@@ -34,7 +34,7 @@ trait RepositoryService {
     userName: String,
     description: Option[String],
     isPrivate: Boolean,
-    defaultBranch: String = "master",
+    defaultBranch: String,
     originRepositoryName: Option[String] = None,
     originUserName: Option[String] = None,
     parentRepositoryName: Option[String] = None,
@@ -61,7 +61,8 @@ trait RepositoryService {
           externalWikiUrl = None,
           allowFork = true,
           mergeOptions = "merge-commit,squash,rebase",
-          defaultMergeOption = "merge-commit"
+          defaultMergeOption = "merge-commit",
+          safeMode = true
         )
       )
 
@@ -71,153 +72,41 @@ trait RepositoryService {
   def renameRepository(oldUserName: String, oldRepositoryName: String, newUserName: String, newRepositoryName: String)(
     implicit s: Session
   ): Unit = {
-    getAccountByUserName(newUserName).foreach { account =>
+    getAccountByUserName(newUserName).foreach { _ =>
       (Repositories filter { t =>
         t.byRepository(oldUserName, oldRepositoryName)
       } firstOption).foreach { repository =>
         LockUtil.lock(s"${repository.userName}/${repository.repositoryName}") {
-          Repositories insert repository.copy(userName = newUserName, repositoryName = newRepositoryName)
-
-          val webHooks = RepositoryWebHooks.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val webHookEvents = RepositoryWebHookEvents.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val milestones = Milestones.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val issueId = IssueId.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val issues = Issues.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val pullRequests = PullRequests.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val labels = Labels.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val priorities = Priorities.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val issueComments = IssueComments.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val issueLabels = IssueLabels.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val commitComments = CommitComments.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val commitStatuses = CommitStatuses.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val collaborators = Collaborators.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val protectedBranches = ProtectedBranches.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val protectedBranchContexts =
-            ProtectedBranchContexts.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val deployKeys = DeployKeys.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val releases = ReleaseTags.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-          val releaseAssets = ReleaseAssets.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-
-          Repositories
-            .filter { t =>
-              (t.originUserName === oldUserName.bind) && (t.originRepositoryName === oldRepositoryName.bind)
-            }
-            .map { t =>
-              t.originUserName -> t.originRepositoryName
-            }
-            .update(newUserName, newRepositoryName)
-
-          Repositories
-            .filter { t =>
-              (t.parentUserName === oldUserName.bind) && (t.parentRepositoryName === oldRepositoryName.bind)
-            }
-            .map { t =>
-              t.parentUserName -> t.parentRepositoryName
-            }
-            .update(newUserName, newRepositoryName)
-
-          deleteRepositoryOnModel(oldUserName, oldRepositoryName)
-
-          RepositoryWebHooks.insertAll(
-            webHooks.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          RepositoryWebHookEvents.insertAll(
-            webHookEvents.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          Milestones.insertAll(milestones.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*)
-          Priorities.insertAll(priorities.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*)
-          IssueId.insertAll(issueId.map(_.copy(_1 = newUserName, _2 = newRepositoryName)): _*)
-
-          val newMilestones = Milestones.filter(_.byRepository(newUserName, newRepositoryName)).list
-          val newPriorities = Priorities.filter(_.byRepository(newUserName, newRepositoryName)).list
-          Issues.insertAll(issues.map { x =>
-            x.copy(
-              userName = newUserName,
-              repositoryName = newRepositoryName,
-              milestoneId = x.milestoneId.map { id =>
-                newMilestones.find(_.title == milestones.find(_.milestoneId == id).get.title).get.milestoneId
-              },
-              priorityId = x.priorityId.map { id =>
-                newPriorities
-                  .find(_.priorityName == priorities.find(_.priorityId == id).get.priorityName)
-                  .get
-                  .priorityId
-              }
-            )
-          }: _*)
-
-          PullRequests.insertAll(
-            pullRequests.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          IssueComments.insertAll(
-            issueComments.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          Labels.insertAll(labels.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*)
-          CommitComments.insertAll(
-            commitComments.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          CommitStatuses.insertAll(
-            commitStatuses.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          ProtectedBranches.insertAll(
-            protectedBranches.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          ProtectedBranchContexts.insertAll(
-            protectedBranchContexts.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-          DeployKeys.insertAll(deployKeys.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*)
-          ReleaseTags.insertAll(releases.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*)
-          ReleaseAssets.insertAll(
-            releaseAssets.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
-
-          // Update source repository of pull requests
+          // Update pull request source-repo columns (no foreign key constraint)
           PullRequests
             .filter { t =>
               (t.requestUserName === oldUserName.bind) && (t.requestRepositoryName === oldRepositoryName.bind)
             }
-            .map { t =>
-              t.requestUserName -> t.requestRepositoryName
-            }
+            .map(t => t.requestUserName -> t.requestRepositoryName)
             .update(newUserName, newRepositoryName)
 
-          // Convert labelId
-          val oldLabelMap = labels.map(x => (x.labelId, x.labelName)).toMap
-          val newLabelMap =
-            Labels.filter(_.byRepository(newUserName, newRepositoryName)).map(x => (x.labelName, x.labelId)).list.toMap
-          IssueLabels.insertAll(
-            issueLabels.map(
-              x =>
-                x.copy(
-                  labelId = newLabelMap(oldLabelMap(x.labelId)),
-                  userName = newUserName,
-                  repositoryName = newRepositoryName
-              )
-            ): _*
-          )
+          // Rename will cascade via constraint
+          Repositories
+            .filter(_.byRepository(oldUserName, oldRepositoryName))
+            .map(t => t.userName -> t.repositoryName)
+            .update(newUserName, newRepositoryName)
 
           // TODO Drop transferred owner from collaborators?
-          Collaborators.insertAll(
-            collaborators.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)): _*
-          )
 
           // Move git repository
-          defining(getRepositoryDir(oldUserName, oldRepositoryName)) { dir =>
-            if (dir.isDirectory) {
-              FileUtils.moveDirectory(dir, getRepositoryDir(newUserName, newRepositoryName))
-            }
+          val repoDir = getRepositoryDir(oldUserName, oldRepositoryName)
+          if (repoDir.isDirectory) {
+            FileUtils.moveDirectory(repoDir, getRepositoryDir(newUserName, newRepositoryName))
           }
           // Move wiki repository
-          defining(getWikiRepositoryDir(oldUserName, oldRepositoryName)) { dir =>
-            if (dir.isDirectory) {
-              FileUtils.moveDirectory(dir, getWikiRepositoryDir(newUserName, newRepositoryName))
-            }
+          val wikiDir = getWikiRepositoryDir(oldUserName, oldRepositoryName)
+          if (wikiDir.isDirectory) {
+            FileUtils.moveDirectory(wikiDir, getWikiRepositoryDir(newUserName, newRepositoryName))
           }
           // Move files directory
-          defining(getRepositoryFilesDir(oldUserName, oldRepositoryName)) { dir =>
-            if (dir.isDirectory) {
-              FileUtils.moveDirectory(dir, getRepositoryFilesDir(newUserName, newRepositoryName))
-            }
+          val filesDir = getRepositoryFilesDir(oldUserName, oldRepositoryName)
+          if (filesDir.isDirectory) {
+            FileUtils.moveDirectory(filesDir, getRepositoryFilesDir(newUserName, newRepositoryName))
           }
           // Delete parent directory
           FileUtil.deleteDirectoryIfEmpty(getRepositoryFilesDir(oldUserName, oldRepositoryName))
@@ -256,6 +145,7 @@ trait RepositoryService {
     Labels.filter(_.byRepository(userName, repositoryName)).delete
     IssueComments.filter(_.byRepository(userName, repositoryName)).delete
     PullRequests.filter(_.byRepository(userName, repositoryName)).delete
+    IssueAssignees.filter(_.byRepository(userName, repositoryName)).delete
     Issues.filter(_.byRepository(userName, repositoryName)).delete
     Priorities.filter(_.byRepository(userName, repositoryName)).delete
     IssueId.filter(_.byRepository(userName, repositoryName)).delete
@@ -266,40 +156,6 @@ trait RepositoryService {
     ReleaseAssets.filter(_.byRepository(userName, repositoryName)).delete
     ReleaseTags.filter(_.byRepository(userName, repositoryName)).delete
     Repositories.filter(_.byRepository(userName, repositoryName)).delete
-
-    // Update ORIGIN_USER_NAME and ORIGIN_REPOSITORY_NAME
-    Repositories
-      .filter { x =>
-        (x.originUserName === userName.bind) && (x.originRepositoryName === repositoryName.bind)
-      }
-      .map { x =>
-        (x.userName, x.repositoryName)
-      }
-      .list
-      .foreach {
-        case (userName, repositoryName) =>
-          Repositories
-            .filter(_.byRepository(userName, repositoryName))
-            .map(x => (x.originUserName ?, x.originRepositoryName ?))
-            .update(None, None)
-      }
-
-    // Update PARENT_USER_NAME and PARENT_REPOSITORY_NAME
-    Repositories
-      .filter { x =>
-        (x.parentUserName === userName.bind) && (x.parentRepositoryName === repositoryName.bind)
-      }
-      .map { x =>
-        (x.userName, x.repositoryName)
-      }
-      .list
-      .foreach {
-        case (userName, repositoryName) =>
-          Repositories
-            .filter(_.byRepository(userName, repositoryName))
-            .map(x => (x.parentUserName ?, x.parentRepositoryName ?))
-            .update(None, None)
-      }
   }
 
   /**
@@ -322,36 +178,37 @@ trait RepositoryService {
     (Repositories
       .join(Accounts)
       .on(_.userName === _.userName)
-      .filter {
-        case (t1, t2) =>
-          t1.byRepository(userName, repositoryName) && t2.removed === false.bind
-    } firstOption) map {
-      case (repository, account) =>
-        // for getting issue count and pull request count
-        val issues = Issues
-          .filter { t =>
-            t.byRepository(repository.userName, repository.repositoryName) && (t.closed === false.bind)
-          }
-          .map(_.pullRequest)
-          .list
+      .filter { case (t1, t2) =>
+        t1.byRepository(userName, repositoryName) && t2.removed === false.bind
+      } firstOption) map { case (repository, account) =>
+      // for getting issue count and pull request count
+      val issues = Issues
+        .filter { t =>
+          t.byRepository(repository.userName, repository.repositoryName) && (t.closed === false.bind)
+        }
+        .map(_.pullRequest)
+        .list
 
-        new RepositoryInfo(
-          JGitUtil.getRepositoryInfo(repository.userName, repository.repositoryName),
-          repository,
-          issues.count(_ == false),
-          issues.count(_ == true),
-          getForkedCount(
-            repository.originUserName.getOrElse(repository.userName),
-            repository.originRepositoryName.getOrElse(repository.repositoryName)
-          ),
-          getOpenMilestones(
-            repository.originUserName.getOrElse(repository.userName),
-            repository.originRepositoryName.getOrElse(repository.repositoryName)
-          ),
-          getRepositoryManagers(repository.userName, repository.repositoryName)
-        )
+      new RepositoryInfo(
+        JGitUtil.getRepositoryInfo(repository.userName, repository.repositoryName),
+        repository,
+        issues.count(_ == false),
+        issues.count(_ == true),
+        getForkedCount(
+          repository.originUserName.getOrElse(repository.userName),
+          repository.originRepositoryName.getOrElse(repository.repositoryName)
+        ),
+        getOpenMilestones(repository.userName, repository.repositoryName),
+        getRepositoryManagers(repository.userName, repository.repositoryName)
+      )
     }
   }
+
+  def getRepositoryById(repositoryId: Long)(implicit s: Session): Option[RepositoryInfo] =
+    Repositories
+      .filter(_.repositoryId === repositoryId.bind)
+      .firstOption
+      .flatMap(r => getRepository(r.userName, r.repositoryName))
 
   /**
    * Returns the repositories except private repository that user does not have access right.
@@ -400,8 +257,8 @@ trait RepositoryService {
    * Returns the list of repositories which are owned by the specified user.
    * This list includes group repositories if the specified user is a member of the group.
    */
-  def getUserRepositories(userName: String, withoutPhysicalInfo: Boolean = false)(
-    implicit s: Session
+  def getUserRepositories(userName: String, withoutPhysicalInfo: Boolean = false)(implicit
+    s: Session
   ): List[RepositoryInfo] = {
     Repositories
       .filter { t1 =>
@@ -464,19 +321,18 @@ trait RepositoryService {
           .filter { case (t1, t2) => t2.removed === false.bind }
           .map { case (t1, t2) => t1 }
       // for Normal Users
-      case Some(x) if (!x.isAdmin || limit) =>
+      case Some(x) =>
         Repositories
           .join(Accounts)
           .on(_.userName === _.userName)
-          .filter {
-            case (t1, t2) =>
-              (t2.removed === false.bind) && ((t1.isPrivate === false.bind && !limit.bind) || (t1.userName === x.userName) ||
-                (t1.userName in GroupMembers.filter(_.userName === x.userName.bind).map(_.groupName)) ||
-                (Collaborators.filter { t3 =>
-                  t3.byRepository(t1.userName, t1.repositoryName) &&
-                  ((t3.collaboratorName === x.userName.bind) ||
+          .filter { case (t1, t2) =>
+            (t2.removed === false.bind) && ((t1.isPrivate === false.bind && !limit.bind) || (t1.userName === x.userName) ||
+              (t1.userName in GroupMembers.filter(_.userName === x.userName.bind).map(_.groupName)) ||
+              (Collaborators.filter { t3 =>
+                t3.byRepository(t1.userName, t1.repositoryName) &&
+                ((t3.collaboratorName === x.userName.bind) ||
                   (t3.collaboratorName in GroupMembers.filter(_.userName === x.userName.bind).map(_.groupName)))
-                } exists))
+              } exists))
           }
           .map { case (t1, t2) => t1 }
       // for Guests
@@ -487,17 +343,16 @@ trait RepositoryService {
           .filter { case (t1, t2) => t1.isPrivate === false.bind && t2.removed === false.bind }
           .map { case (t1, t2) => t1 }
     }).filter { t =>
-        repositoryUserName.map { userName =>
-          t.userName === userName.bind
-        } getOrElse LiteralColumn(true)
-      }
-      .sortBy(_.lastActivityDate desc)
+      repositoryUserName.map { userName =>
+        t.userName === userName.bind
+      } getOrElse LiteralColumn(true)
+    }.sortBy(_.lastActivityDate desc)
       .list
       .map(createRepositoryInfo(_, withoutPhysicalInfo))
   }
 
-  private def createRepositoryInfo(repository: Repository, withoutPhysicalInfo: Boolean = false)(
-    implicit s: Session
+  private def createRepositoryInfo(repository: Repository, withoutPhysicalInfo: Boolean = false)(implicit
+    s: Session
   ): RepositoryInfo = {
     new RepositoryInfo(
       if (withoutPhysicalInfo) {
@@ -554,7 +409,8 @@ trait RepositoryService {
     externalWikiUrl: Option[String],
     allowFork: Boolean,
     mergeOptions: Seq[String],
-    defaultMergeOption: String
+    defaultMergeOption: String,
+    safeMode: Boolean
   )(implicit s: Session): Unit = {
 
     Repositories
@@ -570,6 +426,7 @@ trait RepositoryService {
           r.allowFork,
           r.mergeOptions,
           r.defaultMergeOption,
+          r.safeMode,
           r.updatedDate
         )
       }
@@ -583,12 +440,13 @@ trait RepositoryService {
         allowFork,
         mergeOptions.mkString(","),
         defaultMergeOption,
+        safeMode,
         currentDate
       )
   }
 
-  def saveRepositoryDefaultBranch(userName: String, repositoryName: String, defaultBranch: String)(
-    implicit s: Session
+  def saveRepositoryDefaultBranch(userName: String, repositoryName: String, defaultBranch: String)(implicit
+    s: Session
   ): Unit =
     Repositories
       .filter(_.byRepository(userName, repositoryName))
@@ -600,16 +458,16 @@ trait RepositoryService {
   /**
    * Add collaborator (user or group) to the repository.
    */
-  def addCollaborator(userName: String, repositoryName: String, collaboratorName: String, role: String)(
-    implicit s: Session
+  def addCollaborator(userName: String, repositoryName: String, collaboratorName: String, role: String)(implicit
+    s: Session
   ): Unit =
     Collaborators insert Collaborator(userName, repositoryName, collaboratorName, role)
 
   /**
    * Remove specified collaborator from the repository.
    */
-  def removeCollaborator(userName: String, repositoryName: String, collaboratorName: String)(
-    implicit s: Session
+  def removeCollaborator(userName: String, repositoryName: String, collaboratorName: String)(implicit
+    s: Session
   ): Unit =
     Collaborators.filter(_.byPrimaryKey(userName, repositoryName, collaboratorName)).delete
 
@@ -635,8 +493,8 @@ trait RepositoryService {
    * Returns the list of all collaborator name and permission which is sorted with ascending order.
    * If a group is added as a collaborator, this method returns users who are belong to that group.
    */
-  def getCollaboratorUserNames(userName: String, repositoryName: String, filter: Seq[Role] = Nil)(
-    implicit s: Session
+  def getCollaboratorUserNames(userName: String, repositoryName: String, filter: Seq[Role] = Nil)(implicit
+    s: Session
   ): List[String] = {
     val q1 = Collaborators
       .join(Accounts)
@@ -662,23 +520,23 @@ trait RepositoryService {
 
   def hasOwnerRole(owner: String, repository: String, loginAccount: Option[Account])(implicit s: Session): Boolean = {
     loginAccount match {
-      case Some(a) if (a.isAdmin)                                                                         => true
-      case Some(a) if (a.userName == owner)                                                               => true
-      case Some(a) if (getGroupMembers(owner).exists(_.userName == a.userName))                           => true
-      case Some(a) if (getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN)).contains(a.userName)) => true
-      case _                                                                                              => false
+      case Some(a) if a.isAdmin                                                                         => true
+      case Some(a) if a.userName == owner                                                               => true
+      case Some(a) if getGroupMembers(owner).exists(_.userName == a.userName)                           => true
+      case Some(a) if getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN)).contains(a.userName) => true
+      case _                                                                                            => false
     }
   }
 
-  def hasDeveloperRole(owner: String, repository: String, loginAccount: Option[Account])(
-    implicit s: Session
+  def hasDeveloperRole(owner: String, repository: String, loginAccount: Option[Account])(implicit
+    s: Session
   ): Boolean = {
     loginAccount match {
-      case Some(a) if (a.isAdmin)                                               => true
-      case Some(a) if (a.userName == owner)                                     => true
-      case Some(a) if (getGroupMembers(owner).exists(_.userName == a.userName)) => true
+      case Some(a) if a.isAdmin                                               => true
+      case Some(a) if a.userName == owner                                     => true
+      case Some(a) if getGroupMembers(owner).exists(_.userName == a.userName) => true
       case Some(a)
-          if (getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN, Role.DEVELOPER)).contains(a.userName)) =>
+          if getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN, Role.DEVELOPER)).contains(a.userName) =>
         true
       case _ => false
     }
@@ -686,12 +544,12 @@ trait RepositoryService {
 
   def hasGuestRole(owner: String, repository: String, loginAccount: Option[Account])(implicit s: Session): Boolean = {
     loginAccount match {
-      case Some(a) if (a.isAdmin)                                               => true
-      case Some(a) if (a.userName == owner)                                     => true
-      case Some(a) if (getGroupMembers(owner).exists(_.userName == a.userName)) => true
+      case Some(a) if a.isAdmin                                               => true
+      case Some(a) if a.userName == owner                                     => true
+      case Some(a) if getGroupMembers(owner).exists(_.userName == a.userName) => true
       case Some(a)
-          if (getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN, Role.DEVELOPER, Role.GUEST))
-            .contains(a.userName)) =>
+          if getCollaboratorUserNames(owner, repository, Seq(Role.ADMIN, Role.DEVELOPER, Role.GUEST))
+            .contains(a.userName) =>
         true
       case _ => false
     }
@@ -702,14 +560,26 @@ trait RepositoryService {
       true
     } else {
       loginAccount match {
-        case Some(x) if (x.isAdmin)                                                             => true
-        case Some(x) if (repository.userName == x.userName)                                     => true
-        case Some(x) if (getGroupMembers(repository.userName).exists(_.userName == x.userName)) => true
-        case Some(x)
-            if (getCollaboratorUserNames(repository.userName, repository.repositoryName).contains(x.userName)) =>
+        case Some(x) if x.isAdmin                                                             => true
+        case Some(x) if repository.userName == x.userName                                     => true
+        case Some(x) if getGroupMembers(repository.userName).exists(_.userName == x.userName) => true
+        case Some(x) if getCollaboratorUserNames(repository.userName, repository.repositoryName).contains(x.userName) =>
           true
         case _ => false
       }
+    }
+  }
+
+  def isWritable(repository: Repository, loginAccount: Option[Account])(implicit s: Session): Boolean = {
+    loginAccount match {
+      case Some(x) if x.isAdmin                                                             => true
+      case Some(x) if repository.userName == x.userName                                     => true
+      case Some(x) if getGroupMembers(repository.userName).exists(_.userName == x.userName) => true
+      case Some(x)
+          if getCollaboratorUserNames(repository.userName, repository.repositoryName, Seq(Role.ADMIN, Role.DEVELOPER))
+            .contains(x.userName) =>
+        true
+      case _ => false
     }
   }
 
@@ -726,13 +596,21 @@ trait RepositoryService {
         .length
     ).first
 
-  def getForkedRepositories(userName: String, repositoryName: String)(implicit s: Session): List[Repository] =
-    Repositories
-      .filter { t =>
-        (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
-      }
-      .sortBy(_.userName asc)
-      .list //.map(t => t.userName -> t.repositoryName).list
+  def getForkedRepositories(
+    userName: String,
+    repositoryName: String,
+    order: ForkedRepositoryOrder = ForkedRepositoryOrder.ByOwner
+  )(implicit s: Session): List[Repository] = {
+    val query = Repositories.filter { t =>
+      (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
+    }
+
+    order match {
+      case ForkedRepositoryOrder.ByOwner => query.sortBy(_.userName asc).list
+      case ForkedRepositoryOrder.Oldest  => query.sortBy(t => (t.registeredDate.asc, t.repositoryId.asc)).list
+      case ForkedRepositoryOrder.Newest  => query.sortBy(t => (t.registeredDate.desc, t.repositoryId.desc)).list
+    }
+  }
 
   private val templateExtensions = Seq("md", "markdown")
 
@@ -766,12 +644,20 @@ trait RepositoryService {
           JGitUtil.getContentFromId(git, file.id, true).collect {
             case bytes if FileUtil.isText(bytes) => StringUtil.convertFromByteArray(bytes)
           }
-        } getOrElse None
+        }
+        .flatten
     } getOrElse ""
   }
 }
 
 object RepositoryService {
+  sealed trait ForkedRepositoryOrder
+  object ForkedRepositoryOrder {
+    case object ByOwner extends ForkedRepositoryOrder
+    case object Oldest extends ForkedRepositoryOrder
+    case object Newest extends ForkedRepositoryOrder
+  }
+
   case class RepositoryInfo(
     owner: String,
     name: String,
@@ -820,11 +706,13 @@ object RepositoryService {
     def sshUrl(implicit context: Context): Option[String] = RepositoryService.sshUrl(owner, name)
 
     def splitPath(path: String): (String, String) = {
-      val id = branchList.collectFirst {
-        case branch if (path == branch || path.startsWith(branch + "/")) => branch
-      } orElse tags.collectFirst {
-        case tag if (path == tag.name || path.startsWith(tag.name + "/")) => tag.name
-      } getOrElse path.split("/")(0)
+      val names = (branchList ++ tags.map(_.name)).sortBy(_.length).reverse
+
+      val id = names.collectFirst {
+        case name if (path == name || path.startsWith(name + "/")) => name
+      } getOrElse {
+        path.split("/")(0)
+      }
 
       (id, path.substring(id.length).stripPrefix("/"))
     }
@@ -832,12 +720,10 @@ object RepositoryService {
 
   def httpUrl(owner: String, name: String)(implicit context: Context): String =
     s"${context.baseUrl}/git/${owner}/${name}.git"
+
   def sshUrl(owner: String, name: String)(implicit context: Context): Option[String] =
-    if (context.settings.ssh.enabled) {
-      context.settings.sshAddress.map { x =>
-        s"ssh://${x.genericUser}@${x.host}:${x.port}/${owner}/${name}.git"
-      }
-    } else None
+    context.settings.sshUrl(owner, name)
+
   def openRepoUrl(openUrl: String)(implicit context: Context): String =
     s"github-${context.platform}://openRepo/${openUrl}"
 

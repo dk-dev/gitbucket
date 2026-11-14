@@ -10,9 +10,9 @@ import gitbucket.core.service.{
   PrioritiesService
 }
 import gitbucket.core.util.{ReferrerAuthenticator, WritableUsersAuthenticator}
-import gitbucket.core.util.Implicits._
-import gitbucket.core.util.SyntaxSugars._
-import org.scalatra.forms._
+import gitbucket.core.util.Implicits.*
+import gitbucket.core.util.SyntaxSugars.*
+import org.scalatra.forms.*
 import org.scalatra.i18n.Messages
 import org.scalatra.Ok
 
@@ -28,15 +28,11 @@ class LabelsController
     with WritableUsersAuthenticator
 
 trait LabelsControllerBase extends ControllerBase {
-  self: LabelsService
-    with IssuesService
-    with RepositoryService
-    with ReferrerAuthenticator
-    with WritableUsersAuthenticator =>
+  self: LabelsService & IssuesService & RepositoryService & ReferrerAuthenticator & WritableUsersAuthenticator =>
 
-  case class LabelForm(labelName: String, color: String)
+  private case class LabelForm(labelName: String, color: String)
 
-  val labelForm = mapping(
+  private val labelForm = mapping(
     "labelName" -> trim(label("Label name", text(required, labelName, uniqueLabelName, maxlength(100)))),
     "labelColor" -> trim(label("Color", text(required, color)))
   )(LabelForm.apply)
@@ -44,7 +40,7 @@ trait LabelsControllerBase extends ControllerBase {
   get("/:owner/:repository/issues/labels")(referrersOnly { repository =>
     html.list(
       getLabels(repository.owner, repository.name),
-      countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition(), Map.empty),
+      countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition()),
       repository,
       hasDeveloperRole(repository.owner, repository.name, context.loginAccount)
     )
@@ -54,12 +50,12 @@ trait LabelsControllerBase extends ControllerBase {
     html.edit(None, repository)
   })
 
-  ajaxPost("/:owner/:repository/issues/labels/new", labelForm)(writableUsersOnly { (form, repository) =>
+  ajaxPost("/:owner/:repository/issues/labels/new", labelForm)(writableUsersOnlyWithForm { (form, repository) =>
     val labelId = createLabel(repository.owner, repository.name, form.labelName, form.color.substring(1))
     html.label(
       getLabel(repository.owner, repository.name, labelId).get,
       // TODO futility
-      countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition(), Map.empty),
+      countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition()),
       repository,
       hasDeveloperRole(repository.owner, repository.name, context.loginAccount)
     )
@@ -71,15 +67,16 @@ trait LabelsControllerBase extends ControllerBase {
     } getOrElse NotFound()
   })
 
-  ajaxPost("/:owner/:repository/issues/labels/:labelId/edit", labelForm)(writableUsersOnly { (form, repository) =>
-    updateLabel(repository.owner, repository.name, params("labelId").toInt, form.labelName, form.color.substring(1))
-    html.label(
-      getLabel(repository.owner, repository.name, params("labelId").toInt).get,
-      // TODO futility
-      countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition(), Map.empty),
-      repository,
-      hasDeveloperRole(repository.owner, repository.name, context.loginAccount)
-    )
+  ajaxPost("/:owner/:repository/issues/labels/:labelId/edit", labelForm)(writableUsersOnlyWithForm {
+    (form, repository) =>
+      updateLabel(repository.owner, repository.name, params("labelId").toInt, form.labelName, form.color.substring(1))
+      html.label(
+        getLabel(repository.owner, repository.name, params("labelId").toInt).get,
+        // TODO futility
+        countIssueGroupByLabels(repository.owner, repository.name, IssuesService.IssueSearchCondition()),
+        repository,
+        hasDeveloperRole(repository.owner, repository.name, context.loginAccount)
+      )
   })
 
   ajaxPost("/:owner/:repository/issues/labels/:labelId/delete")(writableUsersOnly { repository =>
@@ -93,9 +90,9 @@ trait LabelsControllerBase extends ControllerBase {
   private def labelName: Constraint = new Constraint() {
     override def validate(name: String, value: String, messages: Messages): Option[String] =
       if (value.contains(',')) {
-        Some(s"${name} contains invalid character.")
+        Some(s"$name contains invalid character.")
       } else if (value.startsWith("_") || value.startsWith("-")) {
-        Some(s"${name} starts with invalid character.")
+        Some(s"$name starts with invalid character.")
       } else {
         None
       }

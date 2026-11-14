@@ -5,9 +5,8 @@ import gitbucket.core.controller.Context
 import gitbucket.core.model.Account
 import gitbucket.core.service.RepositoryService.RepositoryInfo
 import gitbucket.core.util._
-import gitbucket.core.util.SyntaxSugars._
 import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.treewalk.CanonicalTreeParser
+import org.eclipse.jgit.treewalk.{CanonicalTreeParser, TreeWalk}
 import org.eclipse.jgit.lib._
 import org.eclipse.jgit.dircache.DirCache
 import org.eclipse.jgit.diff.{DiffEntry, DiffFormatter}
@@ -52,40 +51,50 @@ object WikiService {
 trait WikiService {
   import WikiService._
 
-  def createWikiRepository(loginAccount: Account, owner: String, repository: String): Unit =
+  def createWikiRepository(loginAccount: Account, owner: String, repository: String, defaultBranch: String): Unit =
     LockUtil.lock(s"${owner}/${repository}/wiki") {
-      defining(Directory.getWikiRepositoryDir(owner, repository)) { dir =>
-        if (!dir.exists) {
-          JGitUtil.initRepository(dir)
-          saveWikiPage(
-            owner,
-            repository,
-            "Home",
-            "Home",
-            s"Welcome to the ${repository} wiki!!",
-            loginAccount,
-            "Initial Commit",
-            None
-          )
-        }
+      val dir = Directory.getWikiRepositoryDir(owner, repository)
+      if (!dir.exists) {
+        JGitUtil.initRepository(dir, defaultBranch)
+        saveWikiPage(
+          owner,
+          repository,
+          "Home",
+          "Home",
+          s"Welcome to the ${repository} wiki!!",
+          loginAccount,
+          "Initial Commit",
+          None
+        )
       }
     }
 
   /**
    * Returns the wiki page.
    */
-  def getWikiPage(owner: String, repository: String, pageName: String): Option[WikiPageInfo] = {
+  def getWikiPage(owner: String, repository: String, pageName: String, branch: String): Option[WikiPageInfo] = {
     Using.resource(Git.open(Directory.getWikiRepositoryDir(owner, repository))) { git =>
       if (!JGitUtil.isEmpty(git)) {
-        JGitUtil.getFileList(git, "master", ".").find(_.name == pageName + ".md").map { file =>
-          WikiPageInfo(
-            file.name,
-            StringUtil.convertFromByteArray(git.getRepository.open(file.id).getBytes),
-            file.author,
-            file.time,
-            file.commitId
-          )
-        }
+        val fileName = pageName + ".md"
+        JGitUtil
+          .getLatestCommitFromPath(git, fileName, branch)
+          .filter { latestCommit =>
+            // If the page has been deleted, its latest commit is the deleting one, which no longer contains the file
+            Option(TreeWalk.forPath(git.getRepository, fileName, latestCommit.getTree)).exists { treeWalk =>
+              treeWalk.close()
+              true
+            }
+          }
+          .map { latestCommit =>
+            val content = JGitUtil.getContentFromPath(git, latestCommit.getTree, fileName, true)
+            WikiPageInfo(
+              fileName,
+              StringUtil.convertFromByteArray(content.getOrElse(Array.empty)),
+              latestCommit.getAuthorIdent.getName,
+              latestCommit.getAuthorIdent.getWhen,
+              latestCommit.getName
+            )
+          }
       } else None
     }
   }
@@ -93,10 +102,10 @@ trait WikiService {
   /**
    * Returns the list of wiki page names.
    */
-  def getWikiPageList(owner: String, repository: String): List[String] = {
+  def getWikiPageList(owner: String, repository: String, branch: String): List[String] = {
     Using.resource(Git.open(Directory.getWikiRepositoryDir(owner, repository))) { git =>
       JGitUtil
-        .getFileList(git, "master", ".")
+        .getFileList(git, branch, ".")
         .filter(_.name.endsWith(".md"))
         .filterNot(_.name.startsWith("_"))
         .map(_.name.stripSuffix(".md"))
@@ -113,7 +122,8 @@ trait WikiService {
     from: String,
     to: String,
     committer: Account,
-    pageName: Option[String]
+    pageName: Option[String],
+    branch: String
   ): Boolean = {
 
     case class RevertInfo(operation: String, filePath: String, source: String)
@@ -147,11 +157,11 @@ trait WikiService {
           if (!p.getErrors.isEmpty) {
             throw new PatchFormatException(p.getErrors())
           }
-          val revertInfo = (p.getFiles.asScala.map { fh =>
+          val revertInfo = p.getFiles.asScala.flatMap { fh =>
             fh.getChangeType match {
               case DiffEntry.ChangeType.MODIFY => {
                 val source =
-                  getWikiPage(owner, repository, fh.getNewPath.stripSuffix(".md")).map(_.content).getOrElse("")
+                  getWikiPage(owner, repository, fh.getNewPath.stripSuffix(".md"), branch).map(_.content).getOrElse("")
                 val applied = PatchUtil.apply(source, patch, fh)
                 if (applied != null) {
                   Seq(RevertInfo("ADD", fh.getNewPath, applied))
@@ -176,7 +186,7 @@ trait WikiService {
               }
               case _ => Nil
             }
-          }).flatten
+          }
 
           if (revertInfo.nonEmpty) {
             val builder = DirCache.newInCore.builder()
@@ -257,8 +267,7 @@ trait WikiService {
               created = false
               updated = JGitUtil
                 .getContentFromId(git, tree.getEntryObjectId, true)
-                .map(new String(_, "UTF-8") != content)
-                .getOrElse(false)
+                .exists(new String(_, "UTF-8") != content)
             }
           }
         }
@@ -341,4 +350,18 @@ trait WikiService {
     }
   }
 
+  /**
+    * Get the branch name from the HEAD of the Wiki repository.
+    * 
+    * from gitbucket.core.controller.WikiController
+    *
+    * @param owner Wiki owner
+    * @param repository Wiki repository
+    * @return Branch name
+    */
+  def getWikiBranch(owner: String, repository: String): String = {
+    Using.resource(Git.open(Directory.getWikiRepositoryDir(owner, repository))) { git =>
+      git.getRepository.getBranch
+    }
+  }
 }

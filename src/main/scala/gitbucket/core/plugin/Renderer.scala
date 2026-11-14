@@ -20,7 +20,7 @@ trait Renderer {
 
 object MarkdownRenderer extends Renderer {
   override def render(request: RenderRequest): Html = {
-    import request._
+    import request.*
     Html(
       Markdown.toHtml(
         markdown = fileContent,
@@ -29,9 +29,9 @@ object MarkdownRenderer extends Renderer {
         enableWikiLink = enableWikiLink,
         enableRefsLink = enableRefsLink,
         enableAnchor = enableAnchor,
-        enableLineBreaks = false,
-        enableTaskList = true,
-        hasWritePermission = false
+        enableLineBreaks = enableLineBreaks,
+        enableTaskList = enableTaskList,
+        hasWritePermission = hasWritePermission
       )(context)
     )
   }
@@ -51,5 +51,8 @@ case class RenderRequest(
   enableWikiLink: Boolean,
   enableRefsLink: Boolean,
   enableAnchor: Boolean,
+  enableLineBreaks: Boolean,
+  enableTaskList: Boolean,
+  hasWritePermission: Boolean,
   context: Context
 )

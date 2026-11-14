@@ -20,7 +20,7 @@ object DatabaseConfig {
       FileUtils.write(
         file,
         """db {
-          |  url = "jdbc:h2:${DatabaseHome};MVCC=true"
+          |  url = "jdbc:h2:${DatabaseHome}"
           |  user = "sa"
           |  password = "sa"
           |#  connectionTimeout = 30000
@@ -36,10 +36,20 @@ object DatabaseConfig {
     ConfigFactory.parseFile(file)
   }
 
-  private lazy val dbUrl = getValue("db.url", config.getString) //config.getString("db.url")
+  private lazy val dbUrl = getValue("db.url", config.getString) // config.getString("db.url")
 
-  def url(directory: Option[String]): String =
-    dbUrl.replace("${DatabaseHome}", directory.getOrElse(DatabaseHome))
+  def url(directory: Option[String]): String = {
+    val sb = new StringBuilder()
+    sb.append(dbUrl)
+    if (dbUrl.startsWith("jdbc:mysql:") && dbUrl.indexOf("permitMysqlScheme") == -1) {
+      if (dbUrl.indexOf("?") == -1) {
+        sb.append("?permitMysqlScheme")
+      } else {
+        sb.append("&permitMysqlScheme")
+      }
+    }
+    sb.toString().replace("${DatabaseHome}", directory.getOrElse(DatabaseHome))
+  }
 
   lazy val url: String = url(None)
   lazy val user: String = getValue("db.user", config.getString)
@@ -89,26 +99,26 @@ object DatabaseType {
 
   object H2 extends DatabaseType {
     val jdbcDriver = "org.h2.Driver"
-    val slickDriver = BlockingH2Driver
-    val liquiDriver = new H2Database()
+    val slickDriver: BlockingJdbcProfile = BlockingH2Driver
+    val liquiDriver: AbstractJdbcDatabase = new H2Database()
   }
 
   object MySQL extends DatabaseType {
     val jdbcDriver = "org.mariadb.jdbc.Driver"
-    val slickDriver = BlockingMySQLDriver
-    val liquiDriver = new MySQLDatabase()
+    val slickDriver: BlockingJdbcProfile = BlockingMySQLDriver
+    val liquiDriver: AbstractJdbcDatabase = new MySQLDatabase()
   }
 
   object MariaDb extends DatabaseType {
     val jdbcDriver = "org.mariadb.jdbc.Driver"
-    val slickDriver = BlockingMySQLDriver
-    val liquiDriver = new MariaDBDatabase()
+    val slickDriver: BlockingJdbcProfile = BlockingMySQLDriver
+    val liquiDriver: AbstractJdbcDatabase = new MariaDBDatabase()
   }
 
   object PostgreSQL extends DatabaseType {
     val jdbcDriver = "org.postgresql.Driver2"
-    val slickDriver = BlockingPostgresDriver
-    val liquiDriver = new PostgresDatabase()
+    val slickDriver: BlockingJdbcProfile = BlockingPostgresDriver
+    val liquiDriver: AbstractJdbcDatabase = new PostgresDatabase()
   }
 
   object BlockingPostgresDriver extends slick.jdbc.PostgresProfile with BlockingJdbcProfile {

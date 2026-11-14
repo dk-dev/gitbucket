@@ -34,7 +34,7 @@
     <div class="head" style="height: 24px;">
       <div class="pull-right">
         <div class="btn-group">
-          <a href="@{helpers.url(repository)}/archive@if(pathList.length > 0){/@pathList.map(helpers.urlEncode).mkString("/")}/@{helpers.urlEncode(branch)}.zip" class="btn btn-sm btn-default pc"><i class="octicon octicon-cloud-download"></i> Download ZIP</a>
+          <a href="@{helpers.url(repository)}/archive/@{helpers.urlEncode(branch)}.zip@if(pathList.nonEmpty){?path=@helpers.urlEncode(pathList.mkString("/"))}" class="btn btn-sm btn-default pc"><i class="octicon octicon-cloud-download"></i> Download ZIP</a>
           <a href="@helpers.url(repository)/find/@helpers.encodeRefName(branch)" class="btn btn-sm btn-default" data-hotkey="t" title="Search files"><i class="octicon octicon-search" aria-label="Search files"></i></a>
           <a href="@helpers.url(repository)/commits/@helpers.encodeRefName((branch :: pathList).mkString("/"))" class="btn btn-sm btn-default"><i class="octicon octicon-history"></i> @if(commitCount > 10000){10000+} else {@commitCount} @helpers.plural(commitCount, "commit")</a>
         </div>
@@ -80,7 +80,10 @@
       <div class="pull-left">
         @gitbucket.core.helper.html.branchcontrol(branch, repository, hasWritePermission){
           @repository.branchList.map { x =>
-            <li><a href="@helpers.url(repository)/tree/@helpers.encodeRefName(x)">@gitbucket.core.helper.html.checkicon(x == branch) @x</a></li>
+            <li class="branch-control-item-branch"><a href="@helpers.url(repository)/tree/@helpers.encodeRefName(x)">@gitbucket.core.helper.html.checkicon(x == branch) @x</a></li>
+          }
+          @repository.tags.map { x =>
+            <li class="branch-control-item-tag"><a href="@helpers.url(repository)/tree/@helpers.encodeRefName(x.name)">@gitbucket.core.helper.html.checkicon(x.name == branch) @x.name</a></li>
           }
         }
         @if(pathList.nonEmpty){
@@ -217,7 +220,7 @@
           }
         </div>
       </div>
-      <div class="box-content-bottom markdown-body" style="padding-left: 20px; padding-right: 20px;">@helpers.renderMarkup(filePath, content, branch, repository, false, false, true)</div>
+      <div class="box-content-bottom markdown-body" style="padding-left: 20px; padding-right: 20px;">@helpers.renderMarkup(filePath, content, branch, repository, false, false, false, true, true)</div>
     }
   }
 }

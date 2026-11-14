@@ -1,18 +1,16 @@
 package gitbucket.core.controller
 
 import java.io.File
-
 import gitbucket.core.model.Account
 import gitbucket.core.service.{AccountService, ReleaseService, RepositoryService}
 import gitbucket.core.servlet.Database
-import gitbucket.core.util._
-import gitbucket.core.util.SyntaxSugars._
-import gitbucket.core.util.Directory._
-import gitbucket.core.util.Implicits._
+import gitbucket.core.util.*
+import gitbucket.core.util.Directory.*
+import gitbucket.core.util.Implicits.*
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.dircache.DirCache
 import org.eclipse.jgit.lib.{Constants, FileMode}
-import org.scalatra._
+import org.scalatra.*
 import org.scalatra.servlet.{FileItem, FileUploadSupport, MultipartConfig}
 import org.apache.commons.io.{FileUtils, IOUtils}
 
@@ -41,7 +39,7 @@ class FileUploadController
           .writeByteArrayToFile(new File(getTemporaryDir(session.getId), FileUtil.checkFilename(fileId)), file.get())
         session += Keys.Session.Upload(fileId) -> file.name
       },
-      FileUtil.isImage
+      FileUtil.isImage(_)
     )
   }
 
@@ -59,88 +57,95 @@ class FileUploadController
 
   post("/file/:owner/:repository") {
     setMultipartConfig()
-    execute(
-      { (file, fileId) =>
-        FileUtils.writeByteArrayToFile(
-          new File(
-            getAttachedDir(params("owner"), params("repository")),
-            FileUtil.checkFilename(fileId + "." + FileUtil.getExtension(file.getName))
-          ),
-          file.get()
+    // Don't accept not logged-in users
+    session.get(Keys.Session.LoginAccount).collect { case loginAccount: Account =>
+      val owner = params("owner")
+      val repository = params("repository")
+
+      // Check whether logged-in user can read the repository
+      onlyRepositoryReadableUser(owner, repository, loginAccount) {
+        execute(
+          { (file, fileId) =>
+            FileUtils.writeByteArrayToFile(
+              new File(
+                getAttachedDir(owner, repository),
+                FileUtil.checkFilename(fileId + "." + FileUtil.getExtension(file.getName))
+              ),
+              file.get()
+            )
+          },
+          _ => true
         )
-      },
-      _ => true
-    )
+      }
+    } getOrElse BadRequest()
   }
 
   post("/wiki/:owner/:repository") {
     setMultipartConfig()
     // Don't accept not logged-in users
-    session.get(Keys.Session.LoginAccount).collect {
-      case loginAccount: Account =>
-        val owner = params("owner")
-        val repository = params("repository")
+    session.get(Keys.Session.LoginAccount).collect { case loginAccount: Account =>
+      val owner = params("owner")
+      val repository = params("repository")
 
-        // Check whether logged-in user is collaborator
-        onlyWikiEditable(owner, repository, loginAccount) {
-          execute(
-            { (file, fileId) =>
-              val fileName = file.getName
-              LockUtil.lock(s"${owner}/${repository}/wiki") {
-                Using.resource(Git.open(Directory.getWikiRepositoryDir(owner, repository))) {
-                  git =>
-                    val builder = DirCache.newInCore.builder()
-                    val inserter = git.getRepository.newObjectInserter()
-                    val headId = git.getRepository.resolve(Constants.HEAD + "^{commit}")
+      // Check whether logged-in user can edit Wiki
+      onlyWikiEditableUser(owner, repository, loginAccount) {
+        execute(
+          { (file, fileId) =>
+            val fileName = file.getName
+            LockUtil.lock(s"$owner/$repository/wiki") {
+              Using.resource(Git.open(Directory.getWikiRepositoryDir(owner, repository))) { git =>
+                val builder = DirCache.newInCore.builder()
+                val inserter = git.getRepository.newObjectInserter()
+                val headId = git.getRepository.resolve(Constants.HEAD + "^{commit}")
 
-                    if (headId != null) {
-                      JGitUtil.processTree(git, headId) { (path, tree) =>
-                        if (path != fileName) {
-                          builder.add(JGitUtil.createDirCacheEntry(path, tree.getEntryFileMode, tree.getEntryObjectId))
-                        }
-                      }
+                if (headId != null) {
+                  JGitUtil.processTree(git, headId) { (path, tree) =>
+                    if (path != fileName) {
+                      builder.add(JGitUtil.createDirCacheEntry(path, tree.getEntryFileMode, tree.getEntryObjectId))
                     }
-
-                    val bytes = IOUtils.toByteArray(file.getInputStream)
-                    builder.add(
-                      JGitUtil.createDirCacheEntry(
-                        fileName,
-                        FileMode.REGULAR_FILE,
-                        inserter.insert(Constants.OBJ_BLOB, bytes)
-                      )
-                    )
-                    builder.finish()
-
-                    val newHeadId = JGitUtil.createNewCommit(
-                      git,
-                      inserter,
-                      headId,
-                      builder.getDirCache.writeTree(inserter),
-                      Constants.HEAD,
-                      loginAccount.fullName,
-                      loginAccount.mailAddress,
-                      s"Uploaded ${fileName}"
-                    )
-
-                    fileName
+                  }
                 }
+
+                val bytes = IOUtils.toByteArray(file.getInputStream)
+                builder.add(
+                  JGitUtil.createDirCacheEntry(
+                    fileName,
+                    FileMode.REGULAR_FILE,
+                    inserter.insert(Constants.OBJ_BLOB, bytes)
+                  )
+                )
+                builder.finish()
+
+                JGitUtil.createNewCommit(
+                  git,
+                  inserter,
+                  headId,
+                  builder.getDirCache.writeTree(inserter),
+                  Constants.HEAD,
+                  loginAccount.fullName,
+                  loginAccount.mailAddress,
+                  s"Uploaded $fileName"
+                )
+
+                fileName
               }
-            },
-            _ => true
-          )
-        }
+            }
+          },
+          _ => true
+        )
+      }
     } getOrElse BadRequest()
   }
 
-  post("/release/:owner/:repository/:tag") {
+  post("/release/:owner/:repository/*") {
     setMultipartConfigForLargeFile()
     session
       .get(Keys.Session.LoginAccount)
-      .collect {
-        case _: Account =>
-          val owner = params("owner")
-          val repository = params("repository")
-          val tag = params("tag")
+      .collect { case loginAccount: Account =>
+        val owner = params("owner")
+        val repository = params("repository")
+        val tag = multiParams("splat").head
+        onlyRepositoryWritableUser(owner, repository, loginAccount) {
           execute(
             { (file, fileId) =>
               FileUtils.writeByteArrayToFile(
@@ -150,18 +155,22 @@ class FileUploadController
             },
             _ => true
           )
+        }
       }
       .getOrElse(BadRequest())
   }
 
   post("/import") {
-    import JDBCUtil._
+    import JDBCUtil.*
     setMultipartConfig()
     session.get(Keys.Session.LoginAccount).collect {
       case loginAccount: Account if loginAccount.isAdmin =>
-        execute({ (file, fileId) =>
-          request2Session(request).conn.importAsSQL(file.getInputStream)
-        }, _ => true)
+        execute(
+          { (file, fileId) =>
+            request2Session(request).conn.importAsSQL(file.getInputStream)
+          },
+          _ => true
+        )
     }
     redirect("/admin/data")
   }
@@ -169,16 +178,36 @@ class FileUploadController
   private def setMultipartConfig(): Unit = {
     val settings = loadSystemSettings()
     val config = MultipartConfig(maxFileSize = Some(settings.upload.maxFileSize))
-    config.apply(request.getServletContext())
+    config.apply(request.getServletContext)
   }
 
   private def setMultipartConfigForLargeFile(): Unit = {
     val settings = loadSystemSettings()
     val config = MultipartConfig(maxFileSize = Some(settings.upload.largeMaxFileSize))
-    config.apply(request.getServletContext())
+    config.apply(request.getServletContext)
   }
 
-  private def onlyWikiEditable(owner: String, repository: String, loginAccount: Account)(action: => Any): Any = {
+  private def onlyRepositoryReadableUser(owner: String, repository: String, loginAccount: Account)(
+    action: => Any
+  ): Any = {
+    implicit val session: Session = Database.getSession(request)
+    getRepository(owner, repository) match {
+      case Some(x) if isReadable(x.repository, Some(loginAccount)) => action
+      case _                                                       => BadRequest()
+    }
+  }
+
+  private def onlyRepositoryWritableUser(owner: String, repository: String, loginAccount: Account)(
+    action: => Any
+  ): Any = {
+    implicit val session: Session = Database.getSession(request)
+    getRepository(owner, repository) match {
+      case Some(x) if isWritable(x.repository, Some(loginAccount)) => action
+      case _                                                       => BadRequest()
+    }
+  }
+
+  private def onlyWikiEditableUser(owner: String, repository: String, loginAccount: Account)(action: => Any): Any = {
     implicit val session: Session = Database.getSession(request)
     getRepository(owner, repository) match {
       case Some(x) =>
@@ -192,14 +221,13 @@ class FileUploadController
     }
   }
 
-  private def execute(f: (FileItem, String) => Unit, mimeTypeChcker: (String) => Boolean) =
+  private def execute(f: (FileItem, String) => Unit, mimeTypeChecker: String => Boolean) =
     fileParams.get("file") match {
-      case Some(file) if (mimeTypeChcker(file.name)) =>
-        defining(FileUtil.generateFileId) { fileId =>
-          f(file, fileId)
-          contentType = "text/plain"
-          Ok(fileId)
-        }
+      case Some(file) if mimeTypeChecker(file.name) =>
+        val fileId = FileUtil.generateFileId
+        f(file, fileId)
+        contentType = "text/plain"
+        Ok(fileId)
       case _ => BadRequest()
     }
 

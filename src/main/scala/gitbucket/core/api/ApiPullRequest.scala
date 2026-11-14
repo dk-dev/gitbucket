@@ -21,15 +21,16 @@ case class ApiPullRequest(
   body: String,
   user: ApiUser,
   labels: List[ApiLabel],
-  assignee: Option[ApiUser],
+  assignees: List[ApiUser],
   draft: Option[Boolean]
 ) {
   val id = 0 // dummy id
+  val assignee = assignees.headOption
   val html_url = ApiPath(s"${base.repo.html_url.path}/pull/${number}")
-  //val diff_url            = ApiPath(s"${base.repo.html_url.path}/pull/${number}.diff")
-  //val patch_url           = ApiPath(s"${base.repo.html_url.path}/pull/${number}.patch")
+  // val diff_url            = ApiPath(s"${base.repo.html_url.path}/pull/${number}.diff")
+  // val patch_url           = ApiPath(s"${base.repo.html_url.path}/pull/${number}.patch")
   val url = ApiPath(s"${base.repo.url.path}/pulls/${number}")
-  //val issue_url           = ApiPath(s"${base.repo.url.path}/issues/${number}")
+  // val issue_url           = ApiPath(s"${base.repo.url.path}/issues/${number}")
   val commits_url = ApiPath(s"${base.repo.url.path}/pulls/${number}/commits")
   val review_comments_url = ApiPath(s"${base.repo.url.path}/pulls/${number}/comments")
   val review_comment_url = ApiPath(s"${base.repo.url.path}/pulls/comments/{number}")
@@ -45,7 +46,7 @@ object ApiPullRequest {
     baseRepo: ApiRepository,
     user: ApiUser,
     labels: List[ApiLabel],
-    assignee: Option[ApiUser],
+    assignees: List[ApiUser],
     mergedComment: Option[(IssueComment, Account)]
   ): ApiPullRequest =
     ApiPullRequest(
@@ -63,12 +64,13 @@ object ApiPullRequest {
       body = issue.content.getOrElse(""),
       user = user,
       labels = labels,
-      assignee = assignee,
+      assignees = assignees,
       draft = Some(pullRequest.isDraft)
     )
 
   case class Commit(sha: String, ref: String, repo: ApiRepository)(baseOwner: String) {
-    val label = if (baseOwner == repo.owner.login) { ref } else { s"${repo.owner.login}:${ref}" }
+    val label = if (baseOwner == repo.owner.login) { ref }
+    else { s"${repo.owner.login}:${ref}" }
     val user = repo.owner
   }
 

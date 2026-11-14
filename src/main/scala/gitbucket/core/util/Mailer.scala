@@ -41,7 +41,7 @@ class Mailer(settings: SystemSettings) {
     htmlMsg: Option[String] = None,
     loginAccount: Option[Account] = None
   ): Option[HtmlEmail] = {
-    if (settings.notification == true) {
+    if (settings.basicBehavior.notification) {
       settings.smtp.map { smtp =>
         val email = new HtmlEmail
         email.setHostName(smtp.host)
@@ -51,7 +51,7 @@ class Mailer(settings: SystemSettings) {
         }
         smtp.ssl.foreach { ssl =>
           email.setSSLOnConnect(ssl)
-          if (ssl == true) {
+          if (ssl) {
             email.setSslSmtpPort(smtp.port.get.toString)
           }
         }
@@ -62,9 +62,8 @@ class Mailer(settings: SystemSettings) {
         smtp.fromAddress
           .map(_ -> smtp.fromName.getOrElse(loginAccount.map(_.userName).getOrElse("GitBucket")))
           .orElse(Some("notifications@gitbucket.com" -> loginAccount.map(_.userName).getOrElse("GitBucket")))
-          .foreach {
-            case (address, name) =>
-              email.setFrom(address, name)
+          .foreach { case (address, name) =>
+            email.setFrom(address, name)
           }
         email.setCharset("UTF-8")
         email.setSubject(subject)

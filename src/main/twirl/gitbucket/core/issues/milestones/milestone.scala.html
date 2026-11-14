@@ -56,7 +56,7 @@
                   } else {
                     <a href="@helpers.url(repository)/issues/milestones/@milestone.milestoneId/close">Close</a> &nbsp;&nbsp;
                   }
-                  <a href="@helpers.url(repository)/issues/milestones/@milestone.milestoneId/delete" class="delete">Delete</a>
+                  <a data-method="post" href="@helpers.url(repository)/issues/milestones/@milestone.milestoneId/delete" class="delete">Delete</a>
                 }
                 </div>
               </div>
@@ -64,13 +64,16 @@
             </div>
             @milestone.description.map { description =>
               <div class="milestone-description markdown-body">
-                @helpers.markdown(
-                  markdown         = description,
-                  repository       = repository,
+                @helpers.renderMarkup(
+                  filePath         = List("temporary.md"),
+                  fileContent      = description,
                   branch           = repository.repository.defaultBranch,
+                  repository       = repository,
                   enableWikiLink   = false,
                   enableRefsLink   = false,
-                  enableLineBreaks = true
+                  enableAnchor     = false,
+                  enableLineBreaks = true,
+                  enableTaskList   = false
                 )
               </div>
             }

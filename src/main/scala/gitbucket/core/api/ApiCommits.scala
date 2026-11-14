@@ -55,8 +55,8 @@ object ApiCommits {
     repositoryName: RepositoryName,
     commitInfo: CommitInfo,
     diffs: Seq[DiffInfo],
-    author: Account,
-    committer: Account,
+    author: Option[Account],
+    committer: Option[Account],
     commentCount: Int
   ): ApiCommits = {
     val files = diffs.map { diff =>
@@ -69,7 +69,8 @@ object ApiCommits {
       }
 
       File(
-        filename = if (diff.changeType == ChangeType.DELETE) { diff.oldPath } else { diff.newPath },
+        filename = if (diff.changeType == ChangeType.DELETE) { diff.oldPath }
+        else { diff.newPath },
         additions = additions,
         deletions = deletions,
         changes = additions + deletions,
@@ -97,7 +98,7 @@ object ApiCommits {
     ApiCommits(
       url = ApiPath(s"/api/v3/repos/${repositoryName.fullName}/commits/${commitInfo.id}"),
       sha = commitInfo.id,
-      html_url = ApiPath(s"${repositoryName.fullName}/commit/${commitInfo.id}"),
+      html_url = ApiPath(s"/${repositoryName.fullName}/commit/${commitInfo.id}"),
       comment_url = ApiPath(""), // TODO no API for commit comment
       commit = Commit(
         url = ApiPath(s"/api/v3/repos/${repositoryName.fullName}/commits/${commitInfo.id}"),
@@ -106,15 +107,19 @@ object ApiCommits {
         message = commitInfo.shortMessage,
         comment_count = commentCount,
         tree = Tree(
-          url = ApiPath(s"/api/v3/repos/${repositoryName.fullName}/tree/${commitInfo.id}"), // TODO This endpoint has not been implemented yet.
+          url = ApiPath(
+            s"/api/v3/repos/${repositoryName.fullName}/tree/${commitInfo.id}"
+          ), // TODO This endpoint has not been implemented yet.
           sha = commitInfo.id
         )
       ),
-      author = ApiUser(author),
-      committer = ApiUser(committer),
+      author = author.map(ApiUser(_)).orNull,
+      committer = committer.map(ApiUser(_)).orNull,
       parents = commitInfo.parents.map { parent =>
         Tree(
-          url = ApiPath(s"/api/v3/repos/${repositoryName.fullName}/tree/${parent}"), // TODO This endpoint has not been implemented yet.
+          url = ApiPath(
+            s"/api/v3/repos/${repositoryName.fullName}/tree/${parent}"
+          ), // TODO This endpoint has not been implemented yet.
           sha = parent
         )
       },
